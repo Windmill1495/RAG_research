@@ -1,0 +1,24 @@
+{
+  "design": "first 10000 rows of train-000.parquet, then eligible QReCC test questions",
+  "source_shard": "https://huggingface.co/datasets/slupart/qrecc-passages/resolve/main/data/train-000.parquet",
+  "source_shard_sha256": "eb366f68603b2abbf9502faea78ed73839f2cfde0e40c01b3e769d4e3f86a9a7",
+  "qrecc_test_md5": "7ad29296a1dfd2f75dafd653a8822269",
+  "n_passages": 10000,
+  "n_questions": 307,
+  "n_conversations": 141,
+  "splits": {
+    "dev": 102,
+    "test": 205
+  },
+  "sources": {
+    "trec": 13,
+    "quac": 255,
+    "nq": 39
+  },
+  "mean_passage_words": 253.2887,
+  "answer_contained_in_labeled_positive_count": 135,
+  "frozen_files_sha256": {
+    "passages": "95afa05248f2aa7f644aa940df87e7604b411bd6cc7f6dd121080f26910db9f6",
+    "questions": "c4249f5587788d74530f4f5c89cbba2649ed09597cb4a6a06e8da61a81456073"
+  }
+}

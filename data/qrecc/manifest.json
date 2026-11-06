@@ -1,0 +1,53 @@
+{
+  "design": "independently supplied fixed passage corpus, then eligible covered QReCC turns",
+  "corpus_input_sha256": "95afa05248f2aa7f644aa940df87e7604b411bd6cc7f6dd121080f26910db9f6",
+  "official_input_sha256": "f7e4f9171329fa6e746fcc660f43ec1903f7505d7a1aa262665f56ccf34aee46",
+  "selected_input_sha256": "c4249f5587788d74530f4f5c89cbba2649ed09597cb4a6a06e8da61a81456073",
+  "source_passage_count": 10000,
+  "filtered_empty_count": 25,
+  "filtered_empty_ids": [
+    "http://web.archive.org/web/20160512130918id_/http://www.hollywoodreporter.com:80/live-feed/sons-anarchy-season-5-finale-397694_p5",
+    "http://web.archive.org/web/20191119100440id_/https://www.nps.gov/nr/travel/national_cemeteries/death.html_p7",
+    "http://web.archive.org/web/20200524001750id_/https://danishcharts.dk/showinterpret.asp?interpret=Mike+Tramp_p1",
+    "http://web.archive.org/web/20200523204725id_/https://www.google.com/search?rlz=1C5CHFA_enUS864US864&sxsrf=ACYBGNT64hmegi4YYIKsszY9aWfyFF7P3g%3A1568829532299&ei=XHCCXfLgEcjI0PEPk5a-0AM&q=How+can+you+treat+SAD%3F&oq=How+can+you+treat+SAD%3F&gs_l=psy-ab.3..0i22i30l10.22698.22698..24498...0.0..0.66.66.1......0....2j1..gws-wiz.KvgaiYEYp1Y&ved=0ahUKEwjy_vC3-drkAhVIJDQIHROLDzoQ4dUDCAs&uact=5_p1",
+    "http://web.archive.org/web/20210211172612id_/http://en.wikipedia.org/wiki/Teen_Patti_(film)_p6",
+    "http://web.archive.org/web/20200127071446id_/http://www.history.com:80/this-day-in-history/alaska-admitted-into-union_p1",
+    "http://web.archive.org/web/20200101170722id_/https://www.biography.com/musician/50-cent_p1",
+    "http://web.archive.org/web/20191223221802id_/https://www.biography.com/musician/bobby-darin_p1",
+    "http://web.archive.org/web/20200517100647id_/https://www.syntacticsinc.com/news-articles-cat/data-processing/_p1",
+    "http://web.archive.org/web/20190723020513id_/https://www.glamour.com/story/tampon-pad-alternatives_p1",
+    "http://web.archive.org/web/20200524090934id_/https://quizlet.com/273354375/who-was-roberto-clemente-flash-cards/_p1",
+    "http://web.archive.org/web/20191208111151id_/http://www.history.com/this-day-in-history/lincoln-issues-emancipation-proclamation_p1",
+    "http://web.archive.org/web/20191117162646id_/https://www.reuters.com/article/us-basketball-nba-james/lebron-james-says-he-is-nowhere-near-retirement-idUSKBN1XQ01Y_p1",
+    "http://web.archive.org/web/20201130155357id_/https://www.newyorker.com/culture/culture-desk/my-big-sister-janis-joplin_p1",
+    "http://web.archive.org/web/20191130172109id_/https://www.history.com/this-day-in-history/sinead-oconnor-tears-up-photo-of-pope-john-paul-snl_p1",
+    "http://web.archive.org/web/20200812220634id_/https://www.thedailybeast.com/menu-for-a-moveable-feast-10-famous-authors-and-their-favorite-foods-and-recipes_p1",
+    "http://web.archive.org/web/20190830064532id_/https://www.history.com/topics/pre-history/fertile-crescent_p1",
+    "http://web.archive.org/web/20190704213218id_/https://www.militaryonesource.mil/military-life-cycle/new-to-the-military/military-career/joining-the-military-elite-forces_p2",
+    "http://web.archive.org/web/20200524100724id_/https://www.lawinsider.com/dictionary/political-affiliation_p1",
+    "http://web.archive.org/web/20200225200216id_/https://www.popsci.com/energy-drinks-caffeine-blood-vessel/_p1",
+    "http://web.archive.org/web/20200115005254id_/https://www.merriam-webster.com/dictionary/brinkmanship_p3",
+    "http://web.archive.org/web/20191028194425id_/https://www.history.com/topics/us-presidents/george-washington_p1",
+    "http://web.archive.org/web/20200813032624id_/https://www.carsdirect.com/bmw/760_p1",
+    "http://web.archive.org/web/20190923034001id_/https://www.history.com/topics/colonial-america/puritanism_p1",
+    "http://web.archive.org/web/20190803020914id_/http://software.fujitsu.com:80/jp/manual/manualfiles/m130018/j2uz5274/06enz205/j5274-01-02-02-01.html_p1"
+  ],
+  "n_passages": 9975,
+  "n_questions": 307,
+  "n_conversations": 141,
+  "splits": {
+    "dev": 102,
+    "test": 205
+  },
+  "split_policy": "preserved selected ids/splits",
+  "history_policy": "previous Rewrite as user, previous nonempty Answer as assistant; exact Context equality; turn_id retained",
+  "context_policy": "error",
+  "context_mismatch_rows": [],
+  "missing_selected_ids": [],
+  "eligible_before_selected_filter": 307,
+  "limitation": "Coverage-conditioned fixed-prefix subset; not official full-corpus QReCC. Reference history differs from model-generated rolling dialogue. Previously inspected test cases are diagnostic, not an untouched final test.",
+  "frozen_files_sha256": {
+    "passages": "48cdee7bf91f6083bb1a9350db1ecb7aab8fb3f086283c276e247625d10c5441",
+    "questions": "8094f6a7ee51bc2ce417abcfc228fa7cd0639e59cb9a9fdf5e85e4b9c5a276b5"
+  }
+}

@@ -1,0 +1,28 @@
+"base_url": "http://127.0.0.1:11434"——Ollama 服务地址
+    浏览器 → RAG 程序（8001）→ Ollama（11434）→ 模型
+"model": "qwen3:1.7b"——负责理解问题和生成回答的模型
+"embedding_model": "bge-m3"——负责文本向量化的模型
+"retriever_backend": "hybrid"——正式实验使用 BM25 和向量检索的混合方式
+    共有三种检索方法：
+    `bm25`：根据共同词项、词频等统计信息打分
+    `dense`：根据 Embedding 向量相似度打分
+    `hybrid`：用 RRF 方法融合 BM25 和向量检索的排名
+"chunk_size": 500——每个文本块的最大长度
+"overlap": 80——相邻文本块的重叠长度
+"top_k": 3——通用配置里的检索条数，QReCC 配置覆盖为 5
+"context_char_budget": 4500——参考资料的字符预算
+"request_timeout": 180——请求 Ollama 时的超时参数
+"history_turns": 6——通用配置里的历史轮数，QReCC 配置覆盖为 3
+"ollama_llm_library": "vulkan"——Ollama 的推理计算后端
+
+Ollama 是一个帮助你在自己的电脑上管理和运行大模型的软件。
+它负责加载模型、执行推理，并提供接口，让你的 Python 程序能够调用模型。
+RAG 程序找到相关资料
+        ↓
+把“问题＋历史＋参考资料”发送给 Ollama
+        ↓
+Ollama 运行 Qwen 模型
+        ↓
+把生成的答案返回给 RAG 程序
+        ↓
+网页展示答案

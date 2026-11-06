@@ -1,0 +1,13 @@
+{
+  "dataset": "qrecc",
+  "corpus_format": "passages_jsonl",
+  "corpus_path": "data/qrecc/passages.jsonl",
+  "index_path": ".cache/qrecc/index.json",
+  "eval_path": "data/qrecc/questions.jsonl",
+  "answer_language": "en",
+  "retriever_backend": "hybrid",
+  "bm25_mode": "inverted",
+  "top_k": 5,
+  "history_turns": 3,
+  "context_char_budget": 4500
+}

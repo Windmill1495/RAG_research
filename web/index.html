@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RAG Research</title><link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <aside>
+    <div class="brand"><span class="logo">R</span><div>RAG Research<small>QReCC · 英语公开语料</small></div></div>
+    <p class="intro">从问题到证据，观察一次 RAG 问答的完整路径。</p>
+    <a class="lab-link" href="/rewrite">进入问题重写 A/B 实验 ↗</a>
+    <label for="mode">回答模式</label><select id="mode"><option value="demo">离线 · 证据摘录</option><option value="ollama">Qwen · 大模型回答</option></select>
+    <p id="modeHint" class="hint"></p>
+    <label for="strategy">Query 构造策略</label><select id="strategy"><option value="current">① 仅当前问题</option><option value="history">② 历史直接拼接</option><option value="rewrite" selected>③ 直接重写</option><option value="structured">④ 结构化重写</option></select>
+    <p class="hint">切换策略后，可重新询问同一个追问，观察检索变化。离线重写使用规则；Qwen 模式调用大模型。</p>
+    <label for="topK">Top-K 检索块数</label><input id="topK" type="number" min="1" max="20" value="5">
+    <div class="index-box"><strong>知识库索引</strong><p id="indexInfo">正在读取…</p><button id="rebuild" class="secondary">重建索引</button></div>
+    <p class="footnote">固定 QReCC passage 子集。研究结果适用于该子集，请用英文提问。</p>
+  </aside>
+  <main>
+    <header><div><span class="eyebrow">LEARN BY BUILDING</span><h1>让每次回答都有依据</h1></div><span id="badge" class="badge">连接中</span></header>
+    <div class="flow"><span>QReCC 段落</span><b>→</b><span>Query 构造</span><b>→</b><span>Top-K 检索</span><b>→</b><span>上下文</span><b>→</b><span>回答</span></div>
+    <div id="notice" role="status" class="notice"></div>
+    <section id="conversation" aria-live="polite">
+      <div id="welcome" class="welcome"><span class="welcome-icon">⌕</span><h2>先问一个问题，再试一次追问</h2><p>例如先问“What is a fat tree topology?”，再追问“What are its characteristics?”。</p><div class="examples"><button data-question="What is a fat tree topology?">What is a fat tree topology? ↗</button><button data-question="Who is Michael Stipe?">Who is Michael Stipe? ↗</button></div></div>
+    </section>
+    <form id="questionForm"><textarea id="question" rows="2" maxlength="2000" placeholder="输入问题；Enter 发送，Shift + Enter 换行" required aria-label="问题"></textarea><button id="send" type="submit">发送 ↑</button></form>
+    <footer><span>检索依据、改写 Query 与各阶段耗时均可展开查看。</span><div><button id="export" class="text-btn">导出记录</button><button id="clear" class="text-btn">清空对话</button></div></footer>
+  </main>
+</body></html>

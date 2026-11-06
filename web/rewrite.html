@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SimpleRAG Research · 问题重写 A/B</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/rewrite.js"></script>
+</head>
+<body class="rewrite-page">
+  <aside>
+    <div class="brand"><span class="logo">R</span><div>SimpleRAG Research<small>问题重写实验</small></div></div>
+    <p class="intro">用同一个模型、同一段历史比较两种独立问题重写方法。</p>
+    <a class="lab-link" href="/">返回多轮 RAG 问答 ↗</a>
+  </aside>
+  <main>
+    <header>
+      <div><span class="eyebrow">QRECC</span><h1>问题重写 A/B 对照</h1></div>
+      <span id="rewriteMode" class="badge">连接中</span>
+    </header>
+    <p id="rewriteModel" class="rewrite-note"></p>
+    <form id="rewriteForm" class="rewrite-panel">
+      <label for="rewriteSample">QReCC 题目</label>
+      <select id="rewriteSample" required disabled></select>
+      <p id="rewriteQuestion" class="content rewrite-question"></p>
+      <details class="trace" open>
+        <summary id="rewriteHistoryHeading">两组看到的对话历史</summary>
+        <div id="rewriteHistory"></div>
+      </details>
+      <button id="rewriteRun" type="submit" class="rewrite-button" disabled>运行 A/B</button>
+    </form>
+    <div id="rewriteNotice" class="notice" role="status" aria-live="polite"></div>
+    <section id="rewriteResults" class="rewrite-results" aria-label="两种方法的重写结果"></section>
+    <details id="rewriteReferencePanel" class="trace rewrite-panel" hidden>
+      <summary>查看人工参考重写</summary>
+      <p id="rewriteReference" class="content"></p>
+      <p class="rewrite-note">本轮人工重写只在评分时使用。ROUGE-1 F1 衡量词面重合，语义质量可由人工盲评补充。</p>
+    </details>
+  </main>
+</body>
+</html>

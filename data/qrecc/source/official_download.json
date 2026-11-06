@@ -1,0 +1,9 @@
+{
+  "url": "https://zenodo.org/records/5760304/files/qrecc-test.json?download=1",
+  "bytes": 19546617,
+  "expected_md5": "7ad29296a1dfd2f75dafd653a8822269",
+  "actual_md5": "7ad29296a1dfd2f75dafd653a8822269",
+  "sha256": "f7e4f9171329fa6e746fcc660f43ec1903f7505d7a1aa262665f56ccf34aee46",
+  "records": 16451,
+  "range_download": "HTTPS byte ranges, combined and checked against the official MD5"
+}
