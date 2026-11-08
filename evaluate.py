@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from rag.config import load_config, offline_config
+from rag.config import add_compcqr_arguments, compcqr_overrides, load_config, offline_config
 from rag.data import load_examples, load_passage_ids, public_input
 from rag.metrics import document_metrics, passage_metrics, rouge_scores
 from rag.llm import runtime_embedding_identity, runtime_model_identity
@@ -43,6 +43,37 @@ def is_fallback(row):
     return "fallback" in str(row.get("rewrite_source", "")) or isinstance(trace, dict) and bool(trace.get("fallback"))
 
 
+def method_errors(row):
+    """Degraded multi-query stages remain visible even when a ranking survives."""
+    trace = row.get("rewrite_trace") or {}
+    errors = []
+    for field in ("component_errors", "selection_error"):
+        value = trace.get(field)
+        if isinstance(value, (list, tuple)):
+            errors.extend(str(item) for item in value if item)
+        elif value:
+            errors.append(str(value))
+    return errors
+
+
+def compcqr_execution_scope(row, *, retrieval_attempted):
+    """Describe the stages actually completed, not merely the selected method."""
+    trace = row.get("rewrite_trace") or {}
+    if ((row.get("error") and row.get("error_stage") != "generation")
+            or row.get("retrieval_error") or row.get("rewrite_error")
+            or method_errors(row) or is_fallback(row)):
+        return "compcqr_degraded"
+    if row.get("rewrite_source") == "compcqr_demo" or trace.get("demo_note"):
+        return "compcqr_demo"
+    if not retrieval_attempted:
+        return "component_generation_only"
+    if trace.get("selection_applied"):
+        return "full_compcqr"
+    if trace.get("selection_skipped") == "disabled_by_config":
+        return "compcqr_rrf_only_ablation"
+    return "compcqr_degraded"
+
+
 def summarize(details, strategies):
     summaries = []
     for strategy in strategies:
@@ -56,10 +87,15 @@ def summarize(details, strategies):
             "generation_error_count": sum(row.get("error_stage") == "generation" for row in rows),
             "rewrite_error_count": sum(bool(row.get("rewrite_error")) for row in rows),
             "fallback_count": sum(is_fallback(row) for row in rows),
+            "method_error_count": sum(bool(method_errors(row)) for row in rows),
+            "selection_error_count": sum(bool(row.get("rewrite_trace", {}).get("selection_error")) for row in rows),
+            "llm_calls": sum(row.get("rewrite_trace", {}).get("llm_calls", 0) for row in rows),
+            "mean_query_count": mean([row.get("rewrite_trace", {}).get("query_count", 1) for row in rows]),
+            "execution_scopes": dict(Counter(row.get("execution_scope", "single_query") for row in rows)),
             "rewrite_sources": dict(Counter(row.get("rewrite_source", "error") for row in rows)),
             **{key: mean([row[key] for row in rows if row.get(key) is not None])
                for key in ("hit_at_k", "recall_at_k", "gold_recall_at_k", "mrr_at_k", "ndcg_at_k",
-                           "gold_recall_at_1", "gold_recall_at_3", "mrr_at_3", "keyword_coverage", "answer_rouge1_f1")},
+                           "gold_recall_at_1", "gold_recall_at_3", "mrr_at_3", "ndcg_at_3", "keyword_coverage", "answer_rouge1_f1")},
             "mean_wall_time_ms": mean([row["wall_time_ms"] for row in rows]),
             "mean_latencies_ms": {key: mean([float(row["latencies_ms"][key]) for row in rows
                 if isinstance(row.get("latencies_ms", {}).get(key), (int, float))]) for key in keys},
@@ -93,6 +129,7 @@ def evaluate(engine, examples, strategies, top_k, generate, *, cache=None):
                 "gold_recall_at_1": 0.0 if qrecc else None,
                 "gold_recall_at_3": 0.0 if qrecc and top_k >= 3 else None,
                 "mrr_at_3": 0.0 if qrecc and top_k >= 3 else None,
+                "ndcg_at_3": 0.0 if qrecc and top_k >= 3 else None,
                 "keyword_coverage": 0.0 if generate and example.get("answer_keywords") else None,
                 "answer_rouge1_f1": 0.0 if generate and example.get("reference_answer") else None,
                 "rewrite_source": "error", "rewrite_error": None, "rewrite_trace": {},
@@ -109,7 +146,7 @@ def evaluate(engine, examples, strategies, top_k, generate, *, cache=None):
                 # Keep actual inputs and runtime metadata for a later evidence
                 # audit; the reference history above may exceed the model cap.
                 row.update({field: result[field] for field in (
-                    "visible_history", "mode", "dataset", "backend"
+                    "visible_history", "mode", "dataset", "backend", "search_queries", "components"
                 ) if field in result})
                 stage = "metrics"
                 if qrecc:
@@ -118,7 +155,8 @@ def evaluate(engine, examples, strategies, top_k, generate, *, cache=None):
                     row["gold_recall_at_1"] = passage_metrics(hits, example["positive_ids"], 1)["gold_recall_at_k"]
                     if top_k >= 3:
                         at_3 = row if top_k == 3 else passage_metrics(hits, example["positive_ids"], 3)
-                        row.update(gold_recall_at_3=at_3["gold_recall_at_k"], mrr_at_3=at_3["mrr_at_k"])
+                        row.update(gold_recall_at_3=at_3["gold_recall_at_k"], mrr_at_3=at_3["mrr_at_k"],
+                                   ndcg_at_3=at_3["ndcg_at_k"])
                 else:
                     hit, mrr = retrieval_metrics(hits, example["gold_document"], top_k)
                     row.update(hit_at_k=hit, recall_at_k=hit, mrr_at_k=mrr)
@@ -139,6 +177,8 @@ def evaluate(engine, examples, strategies, top_k, generate, *, cache=None):
                 row["error"] = f"{type(error).__name__}: {error}"
                 row["error_stage"] = stage
                 print(f"\n[{strategy}/{example['id']}] {stage}: {row['error']}", file=sys.stderr)
+            row["execution_scope"] = (compcqr_execution_scope(row, retrieval_attempted=True)
+                                      if strategy == "compcqr" else "single_query")
             row["wall_time_ms"] = (time.perf_counter() - started) * 1000
             row["cache_key"] = key
             if cache:
@@ -200,6 +240,7 @@ def parse_args():
     parser.add_argument("--limit", type=int, help="Debugging prefix only; not representative random sampling")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--resume", action="store_true")
+    add_compcqr_arguments(parser)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--generate", action="store_true")
     group.add_argument("--retrieval-only", action="store_true")
@@ -221,6 +262,7 @@ def main():
     try:
         overrides = {"model": args.model, "chunk_size": args.chunk_size, "overlap": args.overlap,
                      "retriever_backend": args.backend, "bm25_mode": args.bm25_mode, "top_k": args.top_k}
+        overrides.update(compcqr_overrides(args))
         config = load_config(PROJECT_DIR, {k: v for k, v in overrides.items() if v is not None}, profile=args.dataset)
         if args.mode == "demo" and args.backend in {None, "bm25"}:
             config = offline_config(config)
@@ -266,6 +308,7 @@ def main():
             "history_definition": "Same bounded explicit-role reference history for all strategies; not model-generated rolling dialogue.",
             "latency_definition": "Stage times exclude initialization; resumed rows retain their original measured latency. Model cold starts and service variation affect timing.",
             "quality_warning": "Keyword coverage and answer ROUGE are lexical proxies, not factual accuracy or evidence support.",
+            "compcqr_policy": "CompCQR scores its final fused and selected passage ranking; query count and stage errors are reported. Hybrid retrieval is a project adaptation, not the paper's ANCE/BM25 reproduction." if "compcqr" in strategies else None,
             "demo_warning": "Demo rewrites are heuristics and answers are extracts, not LLM experiment results." if args.mode == "demo" else None,
             "qrecc_warning": "Fixed coverage-conditioned subset, not full-corpus QReCC. Supplied test cases were previously inspected and are diagnostic." if uses_passages else None,
         }
@@ -281,7 +324,7 @@ def main():
     print(f"Saved: {output.resolve()}")
     if args.mode == "demo":
         print("DEMO: heuristic query construction only; not LLM-rewrite results.")
-    return int(any(row["error_count"] or row["rewrite_error_count"] for row in summaries))
+    return int(any(row["error_count"] or row["rewrite_error_count"] or row["method_error_count"] for row in summaries))
 
 
 if __name__ == "__main__":

@@ -122,6 +122,7 @@ class Retriever:
         corpus_format: str = "markdown",
         bm25_mode: str = "inverted",
         *, embedding_digest: str | None = None, embedding_input_policy: str | None = None,
+        hybrid_candidate_depth: int = 400,
     ) -> None:
         # Reuse the splitter's validation, including invalid empty input cases.
         chunk_text("", chunk_size, overlap)
@@ -136,6 +137,10 @@ class Retriever:
         self.chunk_size = chunk_size
         self.overlap = overlap
         self.backend = backend
+        if type(hybrid_candidate_depth) is not int or hybrid_candidate_depth < 1:
+            raise ValueError("hybrid_candidate_depth 必须是正整数")
+        # Ranking-only budget: vectors and corpus index remain reusable.
+        self.hybrid_candidate_depth = hybrid_candidate_depth
         self.embedding_model = embedding_model
         self.embedding_digest = embedding_digest
         self.embedding_input_policy = embedding_input_policy
@@ -158,6 +163,7 @@ class Retriever:
         self._signature: str | None = None
         self._built = False
         self._cache_hit = False
+        self._dense_matrix = None
 
     def _config(self) -> dict:
         return {
@@ -380,6 +386,7 @@ class Retriever:
         # A failed rebuild must not leave a partly replaced in-memory index
         # looking ready to query (for example after an embedding outage).
         self._built = False
+        self._dense_matrix = None
         documents = self._read_documents()
         self._documents = [
             {"document": name, "sha256": digest, "characters": len(text)}
@@ -423,6 +430,7 @@ class Retriever:
     def stats(self) -> dict: # stats() 用来返回检索器的“状态报告”
         return {
             "backend": self.backend,
+            "hybrid_candidate_depth": self.hybrid_candidate_depth if self.backend == "hybrid" else None,
             "corpus_format": self.corpus_format,
             "bm25_mode": self.bm25_mode,
             "documents": len(self._documents),
@@ -515,6 +523,53 @@ class Retriever:
             if len(query_vector) != len(self.embeddings[0]):
                 raise ValueError("查询与索引的 Embedding 维度不同，请重建索引。")
             dense = [sum(a * b for a, b in zip(query_vector, vector)) for vector in self.embeddings]
+        return self._rank_scores(bm25, dense, top_k)
+
+    def search_many(self, queries: list[str], top_k: int = 100) -> list[list[dict]]:
+        """Batch query embeddings, sharing the same index and per-query ranking rule.
+
+        NumPy, when installed, accelerates dot products in float64. The standard
+        library path remains available. Identical query strings are encoded once;
+        BM25 work is reused for permutations with the same token multiset.
+        """
+        if not isinstance(queries, list) or any(not isinstance(q, str) or not q.strip() for q in queries):
+            raise ValueError("queries 必须是非空查询字符串组成的列表")
+        if type(top_k) is not int or top_k < 1:
+            raise ValueError("top_k 必须是正整数")
+        if not self._built:
+            self.build()
+        unique = list(dict.fromkeys(queries))
+        vectors = []
+        if self.backend != "bm25":
+            for offset in range(0, len(unique), 16):
+                vectors.extend(self._embed(unique[offset:offset + 16]))
+            if any(len(v) != len(self.embeddings[0]) for v in vectors):
+                raise ValueError("查询与索引的 Embedding 维度不同，请重建索引。")
+        np = None
+        if vectors:
+            try:
+                import numpy as np
+            except ImportError:
+                pass
+        if np is not None and self._dense_matrix is None:
+            self._dense_matrix = np.asarray(self.embeddings, dtype=np.float64)
+        bm25_cache, output = {}, {}
+        for index, query in enumerate(unique):
+            key = tuple(sorted(Counter(tokenize(query)).items()))
+            if key not in bm25_cache:
+                bm25_cache[key] = (self._bm25_scores(query), list(self._bm25_candidates))
+            bm25, candidates = bm25_cache[key]
+            self._bm25_candidates = candidates
+            dense = []
+            if vectors:
+                dense = ((self._dense_matrix @ np.asarray(vectors[index], dtype=np.float64)).tolist()
+                         if np is not None else
+                         [sum(a * b for a, b in zip(vectors[index], v)) for v in self.embeddings])
+            output[query] = self._rank_scores(bm25, dense, top_k)
+        return [[dict(hit) for hit in output[query]] for query in queries]
+
+    def _rank_scores(self, bm25: list[float], dense: list[float], top_k: int) -> list[dict]:
+        """Shared by scalar and batch search; hybrid RRF here stays at 60."""
         if self.backend == "bm25":
             scores = bm25
             candidates = self._bm25_candidates
@@ -523,7 +578,7 @@ class Retriever:
             candidates = list(range(len(self.chunks)))
         else: # Hybrid 模式：融合两种方法的排名
             # Reciprocal Rank Fusion avoids comparing incompatible score scales.
-            limit = max(10, top_k * 4)
+            limit = self.hybrid_candidate_depth
             lexical_rank = sorted(self._bm25_candidates, key=lambda i: (-bm25[i], self.chunks[i].id))[:limit] #  # BM25 排名前 limit 的块下标
             dense_rank = sorted(range(len(dense)), key=lambda i: (-dense[i], self.chunks[i].id))[:limit] # # 向量排名前 limit 的块下标
             scores = [0.0] * len(self.chunks)

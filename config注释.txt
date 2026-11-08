@@ -26,3 +26,15 @@ Ollama 运行 Qwen 模型
 把生成的答案返回给 RAG 程序
         ↓
 网页展示答案
+
+
+CompCQR（C 组）配置位于 configs/qrecc.json：
+compcqr_max_components：每条组合查询最多使用的组件数，1—5，默认5。
+compcqr_retrieval_depth：每条查询的候选检索深度，默认100，与最终展示Top-K分开。
+compcqr_rrf_k：跨查询RRF平滑常数，默认0；混合检索内部的BM25/向量融合仍用60。
+compcqr_selection_top_k：最多给选择模型看的段落数，默认5以适应本地模型。
+compcqr_passage_chars：每篇候选段落最多提供的字符数，默认700。
+compcqr_selection_char_budget：选择提示的字符预算，默认6000，包含问题、历史和候选段落。
+compcqr_select：是否执行第三次模型调用选择最佳段落，false用于消融。
+llm_num_ctx / llm_num_predict：可在config.json设置模型上下文/最大输出token数，默认8192/512。
+hybrid_candidate_depth：BM25与向量检索各自参与融合的候选数，默认统一400；所有方法相同，不随最终Top-K或C的检索深度变化。仅影响排名，不重建段落向量。

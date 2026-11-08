@@ -9,5 +9,13 @@
   "bm25_mode": "inverted",
   "top_k": 5,
   "history_turns": 3,
-  "context_char_budget": 4500
+  "context_char_budget": 4500,
+  "compcqr_max_components": 5,
+  "compcqr_retrieval_depth": 100,
+  "compcqr_rrf_k": 0,
+  "compcqr_selection_top_k": 5,
+  "compcqr_passage_chars": 700,
+  "compcqr_selection_char_budget": 6000,
+  "compcqr_select": true,
+  "hybrid_candidate_depth": 400
 }

@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let history = [], records = [], busy = false, historyTurns = 3;
 const modeNames = {demo: '离线证据摘录 · 未调用大模型', ollama: 'Ollama / Qwen 生成'};
-const rewriteNames = {none:'仅当前问题', history_concat:'历史直接拼接', no_history:'无历史，保留原问题', heuristic_demo:'离线启发式规则', heuristic_fallback:'LLM失败后的启发式回退', llm:'大模型重写', llm_structured:'结构化重写'};
+const rewriteNames = {none:'仅当前问题', history_concat:'历史直接拼接', no_history:'无历史，保留原问题', heuristic_demo:'离线启发式规则', heuristic_fallback:'LLM失败后的启发式回退', llm:'大模型重写', llm_structured:'结构化重写', compcqr:'CompCQR 组合查询', llm_compcqr:'CompCQR 组合查询', compcqr_demo:'CompCQR 离线规则演示', compcqr_llm:'CompCQR 模型组件', compcqr_partial:'CompCQR 部分组件失败', compcqr_fallback:'CompCQR 组件失败后的回退'};
 
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
@@ -36,7 +36,7 @@ function renderMessage(role, text, result) {
   if(result) {
     const detail=element('details','trace');
     detail.append(element('summary','',`查看检索过程 · ${result.hits.length} 个块 · ${result.latencies_ms.total} ms`));
-    detail.append(element('pre','',`检索 Query：\n${result.search_query}\n\n改写来源：${rewriteNames[result.rewrite_source] || result.rewrite_source}\n检索后端：${result.backend}\n上下文长度：${result.context.length} 字符\n阶段耗时 (ms)：${JSON.stringify(result.latencies_ms)}`));
+    detail.append(element('pre','',`${result.strategy === 'compcqr' ? '基础改写（实际检索使用组合查询）' : '检索 Query'}：\n${result.search_query}\n\n改写来源：${rewriteNames[result.rewrite_source] || result.rewrite_source}\n检索后端：${result.backend}\n上下文长度：${result.context.length} 字符\n阶段耗时 (ms)：${JSON.stringify(result.latencies_ms)}`));
     if(result.rewrite_error) detail.append(element('p','warning',`重写回退原因：${result.rewrite_error}`));
     if(result.rewrite_trace) detail.append(element('pre','',`重写记录：${JSON.stringify(result.rewrite_trace,null,2)}`));
     for(const hit of result.hits) {

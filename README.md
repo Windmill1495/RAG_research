@@ -1,151 +1,180 @@
-# SimpleRAG Research · 对话问题重写与混合检索
+# RAG Research · QReCC 对话问题重写与混合检索
 
-三个实验共用 **BM25 + `bge-m3` 混合检索**，用 RRF 融合词项和向量排名。实验一比较 Query 构造策略，实验二比较 Qwen3 模型规模，主实验在 8B 上比较重写质量和下游检索效果。网页可以逐题查看，命令行负责成批运行和导出。
+项目用 QReCC 子集演示多轮 RAG 问答，并比较不同的查询构造和重写方法。网页可以试问答、查看检索证据和逐题对比 A/B/C 重写与检索，命令行负责批量评测和导出结果。正式评测默认使用 **BM25 + `bge-m3` 混合检索**，以 RRF 融合词项和向量排名。当前数据包含 **9,975 个英文段落和 307 道题**，主实验已接入 A 直接重写、B 结构化重写和 C CompCQR 组合查询。
 
-从 [实验指南](docs/实验指南.md) 查看三个实验的命令和指标。主实验细节见 [问题重写实验说明](docs/问题重写实验说明.md)，代码结构见 [阅读顺序](docs/阅读顺序.md)。
+## 快速启动
 
-## 运行 307 题 A/B 对照
+需要 Python 3.10 或以上版本。项目使用 Python 标准库，准备好 Python 即可运行离线演示。真实模型模式另需 Ollama 和对应模型。
 
-在项目目录打开 PowerShell。全局默认模型为 `qwen3:1.7b`，主实验使用 `qwen3:8b`。运行前启动 Ollama，用 `ollama list` 确认已安装 `qwen3:8b` 和 `bge-m3`。缺少时可分别用 `ollama pull qwen3:8b` 和 `ollama pull bge-m3` 安装。
+| 入口 | 用途 |
+| --- | --- |
+| `start_qrecc.bat` | Windows 上双击启动 RAG 网页，自动检测 Ollama 和模型 |
+| `run_tests.bat` | 双击运行程序测试 |
+| `app.py` | 在命令行选择运行模式、端口或初始页面 |
+| `chat.py` | 在终端进行多轮问答 |
 
-```powershell
-# 先用两题离线检查数据、输出和评分流程
-& 'G:\Anaconda3\python.exe' -X utf8 -B evaluate_rewrite.py --mode demo --limit 2
-# 用 Qwen3-8B 跑项目全部 307 题，评估 A/B 重写与下游检索
-& 'G:\Anaconda3\python.exe' -X utf8 -B evaluate_rewrite.py --mode ollama --model qwen3:8b --split all
-```
+`start_qrecc.bat` 使用 `launch.ps1` 查找 Python，尝试启动本地 Ollama，再以 `auto` 模式打开 [RAG 首页](http://127.0.0.1:8001/)。生成模型和向量模型均可用时，首页使用 Ollama 和混合检索，否则进入 BM25 离线演示。离线模式用规则构造查询，回答展示检索到的证据摘录。
 
-`demo` 用启发式规则和 BM25 检查流程。正式报告使用 Ollama 模式的混合检索。默认读取 `data/qrecc/questions.jsonl` 的 102 道开发题和 205 道测试题，两组各 307 条，共 614 条结果。可用 `--split dev` 或 `--split test` 单独运行一组数据。批量报告保存在 `outputs/rewrite_runs/` 的新目录，分别记录重写和检索的分数、失败与耗时。
-
-### 在网页逐题看
+在项目根目录打开 PowerShell。下文 `$py` 代表当前电脑的 Python 路径，换电脑时按实际安装位置修改。Python 已加入 PATH 时可设置 `$py = 'python'`。
 
 ```powershell
-& 'G:\Anaconda3\python.exe' -X utf8 -B app.py --page rewrite --mode ollama --port 8001
+$py = 'G:\Anaconda3\python.exe'
+
+# 强制使用离线模式
+& $py -X utf8 -B app.py --mode demo --port 8001
 ```
 
-打开 [重写实验页面](http://127.0.0.1:8001/rewrite)，选一道题并运行对照。页面并排显示 A/B 输出、参考重写、ROUGE-1 F1、耗时和修复或回退信息。该页面面向逐题分析，批量报告和盲评表由上面的命令行生成。把 `--mode ollama` 换成 `--mode demo` 可离线查看流程。
-
-### 继续做模型和数据对照
-
-- **换模型**时，保持题目、策略和评测选项相同，在批量命令后加 `--model` 和 `ollama list` 中的模型标签。网页启动可用 `--rewrite-model` 指定重写模型。每个模型单独保存运行结果。
-- **用官方 JSON 单独测重写质量**时，使用 `--data` 指向 QReCC 官方对话 JSON，指定 `--data-format qrecc-json --split test --rewrite-only` 或换成训练划分。完整下游检索还需完整语料和混合索引。
-- **C 组改进方向待定**，当前运行 A/B 基线。
-
-## 原有 RAG 网页和启动器
-
-Windows 上双击：
-
-| 文件 | 打开什么 |
-|---|---|
-| `start_qrecc.bat` | QReCC 英语知识库，自动检测本地 Qwen 和向量模型 |
-| `start_qrecc_demo.bat` | QReCC 英语知识库，BM25 离线证据摘录 |
-| `run_tests.bat` | 运行软件测试 |
-
-页面地址为 **http://127.0.0.1:8001/**。两个网页启动文件请分别运行，或停止前一个后再切换；它们使用相同端口。启动器会优先查找项目虚拟环境和本机 `G:\Anaconda3\python.exe`，再查找常见 Python 安装。不需要 pip 安装运行依赖，要求 Python 3.10+。
-
-默认生成模型为 **`qwen3:1.7b`**，混合检索向量模型为 **`bge-m3`**，服务地址是 `http://127.0.0.1:11434`。首次使用可分别运行 `ollama pull qwen3:1.7b` 和 `ollama pull bge-m3`。自动模式在模型不可用时显示 BM25 离线演示。**正式实验请显式用 `--mode ollama`**。
-
-如终端中 `python` 不可用，可使用完整路径：
+运行真实模型前，在 Ollama 启动后用 `ollama list` 检查已安装的模型。需要时安装默认问答模型和向量模型。
 
 ```powershell
-& 'G:\Anaconda3\python.exe' -X utf8 -B app.py --dataset qrecc --mode ollama --port 8001
+ollama pull qwen3:1.7b
+ollama pull bge-m3
 ```
 
-## 已实现的能力
+### 网页与索引状态
 
-- 内置 QReCC JSONL 语料。检索器也支持显式配置的 Markdown/纯文本语料。
-- QReCC 使用完整 passage，保留原始 `passage_id`，不再次按 500 字符切分。
-- 真正的 BM25 倒排索引，以及可选的原始逐块扫描路径；两路保持相同公式和分词，可做结果一致性验证。
-- 正式实验默认 `hybrid`，组合 BM25 和 `bge-m3` 的排序。`bm25` 和 `dense` 可单独用于诊断。
-- 四种 Query 策略：`current / history / rewrite / structured`。
-- 固定角色历史与统一历史窗口、结构化输出校验、最多一次修复、明确失败/回退记录。
-- 检索、上下文与生成分开计时；生成失败仍保留成功检索的指标。
-- 实验一和二评估段落检索质量。主实验还评估改写质量并导出人工盲评材料。
-- 逐题 JSONL 检查点、配置/源码/数据签名、严格匹配后续跑，以及人工盲评模板。
-
-这是工程基线与可验证的启发式改进，不是原始 RAG 论文的联合训练复现，也没有进行重写模型训练。结构化检查和引用编号检查都不能保证语义正确。
-
-## 配置怎么选
-
-`config.json` 保留通用模型配置。`configs/qrecc.json` 设置语料、索引、评测文件、回答语言和默认预算。命令行显式参数最后覆盖。
-
-| 项目 | QReCC 配置 |
-|---|---|
-| 检索材料 | `data/qrecc/passages.jsonl` |
-| 切分 | 已有 passage 直接作为检索单元 |
-| 混合索引缓存 | `.cache/qrecc/index.json` |
-| 离线 BM25 缓存 | `.cache/qrecc/index-bm25.json` |
-| 评测标签 | 一个或多个 `positive_ids` |
-| 默认 Top-K | 5 |
-| 历史 | 最近最多 3 个用户轮次 |
-| 回答 | 英文 |
-
-历史按真实用户消息定位窗口；缺失助手回答时不会把后面的角色交替猜错。每条历史内容最多 4000 字符；所有策略使用相同的可见历史。`history_turns` 约束的是已有历史，当前问题另行加入。
-
-索引有语料/格式/切分/模型等指纹。更换语料或索引相关配置后会重建；切换 Query 策略不需要重建。QReCC 使用原始 passage 边界。字符分块参数用于 Markdown 和纯文本语料。实验缓存另有严格签名，真实模型模式还会读取 Ollama 当前权重 digest；修改权重、代码或提示词之后请用新的输出目录。若自行替换同名 embedding 权重，还应强制重建向量索引。
-
-## 批量检索实验
-
-先确认流程：
+- **RAG 首页 `/`** 支持英文多轮问答，可查看检索 Query、来源段落和各阶段耗时。
+- **A/B/C 重写页 `/rewrite`** 可从 307 道题中选题，比较三组输出、人工参考、ROUGE-1 F1、修复记录与适用的检索指标。已有服务可直接打开 [A/B/C 重写页](http://127.0.0.1:8001/rewrite)。
+- **首次建立混合索引**时，首页先打开，程序在后台处理语料。页面显示「准备索引中」，终端打印 `Embeddings: 已完成数量/总数量`，索引就绪后页面自动更新，请保持启动窗口打开。
 
 ```powershell
-python evaluate.py --dataset qrecc --mode demo --backend bm25 --strategies current history rewrite --split dev --top-k 3 --limit 10
+& $py -X utf8 -B app.py --mode ollama --page rewrite --rewrite-model qwen3:1.7b --port 8001
 ```
 
-正式模型对照：
+## 查询策略与配置
+
+| 策略 | Query 怎样构造 |
+| --- | --- |
+| `current` | 仅使用当前问题 |
+| `history` | 拼接窗口内的历史问答和当前问题 |
+| `rewrite`（主实验中的 A） | 让模型直接生成一条可以独立理解的问题，并检查输出 |
+| `structured`（主实验中的 B） | 让模型输出主题、指代对象、独立问题和歧义标记，检查输出，必要时修复一次 |
+| `compcqr`（主实验中的 C） | 生成查询与假设答案组件，组合多条查询检索，经 RRF 融合后由模型选择最佳段落 |
+
+五种策略共享同一套历史处理。默认保留最近最多 **3 个用户轮次**，当前问题另行加入。完整问答把检索结果整理为编号证据，再结合原问题和历史生成回答。重写和检索各自记录耗时，模型重写失败时会记录回退来源。
+
+配置按内置默认值、`config.json`、`configs/qrecc.json`、显式参数的顺序覆盖。下面是当前 QReCC 配置的有效值。
+
+| 设置 | 默认值 |
+| --- | --- |
+| Ollama 服务 | `http://127.0.0.1:11434` |
+| 生成与重写模型 | `qwen3:1.7b` |
+| 检索方式 | `hybrid`，BM25 倒排 + `bge-m3` 向量排名 |
+| 检索条数 | 问答默认 Top-5，主实验下游检索固定 Top-3 |
+| 回答语言与证据预算 | 英文，最多 4,500 字符的证据上下文 |
+| 混合索引 | `.cache/qrecc/index.json` |
+| 离线索引 | `.cache/qrecc/index-bm25.json` |
+
+QReCC 已经提供 passage 边界，索引保留完整正文和原始段落 ID。`chunk_size` 与 `overlap` 用于显式配置的 Markdown 或纯文本语料。Ollama 对超长向量输入按模型上下文窗口截断，原始段落正文仍用于 BM25 和证据整理。
+
+索引缓存完整保存后，可在相同语料和索引配置下复用。缓存指纹包含语料、相关配置和向量模型权重摘要。切换查询策略或生成模型可继续用同一混合索引。需要手动重建时执行 `& $py -X utf8 -B rebuild_index.py --mode ollama --force`。
+
+## 数据与评测范围
+
+| 文件 | 内容 |
+| --- | --- |
+| `data/qrecc/passages.jsonl` | 固定的 10,000 条源语料去除 25 条空正文后，得到 9,975 个有效段落 |
+| `data/qrecc/questions.jsonl` | 307 道有本地语料覆盖的追问，涉及 141 段对话，分为 102 道开发题与 205 道测试题 |
+| `data/qrecc/source/qrecc-test.json` | 官方测试对话的 16,451 轮记录，其中 13,676 轮有历史 |
+| `data/qrecc/manifest.json` | 固定语料和题目数量、划分、历史构造规则以及哈希 |
+
+项目的 dev/test 是从官方测试对话中按会话划分的子集。历史由**此前轮次**的人工 Rewrite 和非空参考 Answer 重建，并与官方 Context 核对。**当前轮**的人工 Rewrite、参考答案和正例 ID 用于评测，模型输入使用当前问题和历史。
+
+使用项目数据跑出的检索成绩对应 307 题和本地 9,975 个段落。官方测试 JSON 可以直接用于纯重写评测。完整下游检索还需要与官方标注匹配的完整语料索引。数据来源和许可见 [数据来源](data/qrecc/DATA_SOURCES.md)与[来源许可](data/qrecc/SOURCE_LICENSE.md)。
 
 ```powershell
-python evaluate.py --dataset qrecc --mode ollama --model qwen3:1.7b --backend hybrid --strategies current history rewrite --split all --top-k 3 --retrieval-only
+& $py -X utf8 -B prepare_qrecc.py --passages data/qrecc/source/passages.jsonl --qrecc-test data/qrecc/source/qrecc-test.json --selected data/qrecc/source/selected_v2.jsonl --out data/qrecc_rebuilt --context-policy error
 ```
 
-实验二只运行 `rewrite`，用 `--model` 指定模型，每个模型单独保存运行结果。当前本地检索范围为 307 题和 9,975 段语料。完整官方语料仍需接入大规模混合索引。 [查看完整实验指南](docs/实验指南.md)
+## 批量运行实验
 
-生成质量可选加 `--generate`；默认仅检索，但模型重写策略仍会调用 Qwen。回答提示使用相同当前问题、历史与证据格式，不额外加入重写 Query。参考答案与人工 Rewrite 不进入检索/回答调用。
+三个实验的命令都在项目根目录运行。先在开发题上检查流程和确定参数，再用固定的题目、历史窗口、语料和指标进行对照。正式比较显式使用 `--mode ollama`，并记录实际模型标签及权重摘要。
 
-输出自动放入新的 `outputs/runs/` 子目录，包含 `manifest.json`、`checkpoint.jsonl`、`report.json`、`summary.csv`、`details.csv`。如果运行中断：
+### 实验一 · 比较 Query 构造
+
+固定 `qwen3:1.7b`，比较 `current`、`history` 和 `rewrite`。每题取一次 Top-3，由同一个排名计算 @1 和 @3。
 
 ```powershell
-python evaluate.py --dataset qrecc --mode ollama --backend hybrid --strategies current history rewrite --split dev --top-k 3 --output-dir outputs/my_run
-# 上一行首次创建目录；中断后以完全相同参数加 --resume
-python evaluate.py --dataset qrecc --mode ollama --backend hybrid --strategies current history rewrite --split dev --top-k 3 --output-dir outputs/my_run --resume
+& $py -X utf8 -B evaluate.py --mode demo --backend bm25 --strategies current history rewrite --split dev --top-k 3 --limit 2
+& $py -X utf8 -B evaluate.py --mode ollama --model qwen3:1.7b --backend hybrid --strategies current history rewrite --split all --top-k 3 --retrieval-only
 ```
 
-已记录的失败题也视为完成，续跑不会悄悄重试或改变分母。配置/数据/源码不匹配会拒绝恢复；已经写完最终 report 的实验不能再次覆盖输出。
+第一行是离线流程检查，第二行对项目 307 题运行正式模式。`evaluate.py` 默认评测检索。显式添加 `--generate` 可同时生成回答并保存辅助评分，此时省略 `--retrieval-only`。
 
-### 检索指标
+### 实验二 · 比较 Qwen3 模型规模
 
-QReCC 根据原始 passage ID 计分：
-
-- `hit_at_k`：前 K 个结果至少命中一个标注正例。
-- `gold_recall_at_k`：命中的不同正例数 / 该题库内标注正例总数；QReCC 的 `recall_at_k` 同此字段。
-- `mrr_at_k`：首个正例的倒数排名，未命中为 0。
-- `ndcg_at_k`：二元相关性与多个正例的排序质量。
-
-名次按原始检索排名计算；重复正例只贡献一次，不在事后去重重新排名。正例标签也不能保证回答正确或包含参考答案的完全相同字符串。生成的 ROUGE/关键词覆盖都是辅助词面指标，不是准确率或幻觉率。
-
-## 数据、来源与研究限制
-
-QReCC 小语料来自同学提供的 v2 固定前 10000 passage；预处理明确排除 25 条空正文，保留 9975 条有效 passage。原始文件、选题清单及原 manifest 放在 `data/qrecc/source/`，来源说明见 `SOURCE_LICENSE.md` 与新 `manifest.json`。
-
-角色历史由官方原始测试会话的**此前人工 Rewrite 与非空参考 Answer**重建，和每题 Context 核对。它是固定参考历史评测，不是系统自己生成前轮回答的滚动对话。当前答案、人工 Rewrite 和正例仅由评测层持有；先前参考回答作为历史属于明确报告的评测条件。
-
-先固定语料，再只评测正例在该子集内的问题，仍有覆盖筛选偏差。开发/测试在原官方 test 内按会话再划分，属于项目内部划分，不能冒充官方训练/测试协议或全库成绩。本版本改变了历史处理、空段过滤、BM25 参数/分词与生成模型，必须重新报告结果，不能套用同学旧报告数字。
-
-重新生成数据，需指定一个新的输出目录，防止覆盖冻结材料：
+固定 `rewrite`、语料、混合索引和评测设置，对比 1.7B、4B、8B、14B、32B 五个规模。每个已安装的模型单独运行一次。下面以 4B 为例，模型标签以 `ollama list` 的结果为准。
 
 ```powershell
-python prepare_qrecc.py --passages data/qrecc/source/passages.jsonl --qrecc-test data/qrecc/source/qrecc-test.json --selected data/qrecc/source/selected_v2.jsonl --out data/qrecc_rebuilt --context-policy exclude
+& $py -X utf8 -B evaluate.py --mode ollama --model qwen3:4b-q4_K_M --backend hybrid --strategies rewrite --split all --top-k 3 --retrieval-only
 ```
 
-`exclude` 仅剔除无法精确核对历史的样本，并在 manifest 列明原因；不能猜测角色。实际样本数量与划分以新 manifest 为准。数据由[QReCC 官方归档](https://zenodo.org/records/5760304)和[v2 所用 passage 公开镜像](https://huggingface.co/datasets/slupart/qrecc-passages/tree/main/data)提供，保留作者归属与来源 URL。
+### 主实验 · A/B/C 重写与检索方法对照
 
-## 从哪里读原有 RAG 代码
+正式设置使用 **`qwen3:8b`**。运行前确认 Ollama 已安装 `qwen3:8b` 和 `bge-m3`，需要时执行 `ollama pull qwen3:8b`。A、B、C 三组收到同一道题和相同的可见历史。批量入口默认运行三组。C 的基础独立改写可与人工参考评分，完整 CompCQR 的效果由最终融合及选择后的检索排名评价。
 
-1. `rag/retrieval.py`：你已学习的模块；新增 JSONL 完整 passage 和倒排实现。
-2. `rag/data.py` 与 `prepare_qrecc.py`：知识材料、问题、历史和评测标签如何分开。
-3. `rag/rewriters.py`：独立研究的核心，查看各策略和修复/回退记录。
-4. `rag/pipeline.py`：把 Query、检索、参考资料和回答连接起来。
-5. `rag/metrics.py`、`evaluate.py`、`evaluate_rewrite.py`：检索与重写质量怎样分别计分。
-6. `rag/run_cache.py`：索引缓存之外，实验为什么需要独立签名和检查点。
+```powershell
+# 先检查两道题的重写评分与报告导出
+& $py -X utf8 -B evaluate_rewrite.py --mode demo --split dev --limit 2 --rewrite-only
 
-早期验证产物在 `outputs/validation/`。当前实验以本次运行目录的模型标识、数据清单和逐题报告为准。
+# 用已安装的 8B 模型检查两道开发题及其下游检索
+& $py -X utf8 -B evaluate_rewrite.py --mode ollama --model qwen3:8b --split dev --limit 2
+
+# 跑完项目数据，得到 307 题 × 3 组的逐题记录
+& $py -X utf8 -B evaluate_rewrite.py --mode ollama --model qwen3:8b --split all
+```
+
+`--split dev` 或 `--split test` 可单独选择划分。批量入口默认在有标注且被语料覆盖的题上检索固定 Top-3。只比较重写质量时加 `--rewrite-only`，也可读取本地的官方测试对话。对 C 而言，该选项只生成组件并评价基础改写，不执行多查询检索和最佳段落选择，不能作为完整 C 的成绩。
+
+```powershell
+& $py -X utf8 -B evaluate_rewrite.py --mode ollama --model qwen3:8b --data data/qrecc/source/qrecc-test.json --data-format qrecc-json --split test --rewrite-only
+```
+
+用小索引诊断官方测试对话的检索表现时，可显式使用 `--allow-partial-corpus`，并通过 `report.json` 的 `metadata.retrieval` 核对参与检索计分的题数与覆盖范围。更多对照设置见[实验指南](docs/实验指南.md)。
+
+## 指标、报告与续跑
+
+| 指标 | 怎样读 |
+| --- | --- |
+| Gold Recall@1、@3 | 前 1 或前 3 名命中的不同正例 ID 数，除以该题评测记录中的标注正例数，再按题平均 |
+| MRR@3 | 前三名中首个正例的倒数名次，未命中计 0，再按题平均 |
+| ROUGE-1 Precision、Recall、F1 | 改写与人工参考的词项重合程度 |
+| 耗时、失败、回退 | 对照重写和检索各阶段耗时，结合错误、修复与回退记录解释结果 |
+| 人工盲评 | 核查指代与省略、原意及约束、无依据新增、能否独立理解，允许等义措辞 |
+
+检索排名按实际返回顺序计分。项目子集的分母使用其 `positive_ids`。重写评测与检索评测分别统计参与计分的题数，检索失败时仍保留可用的重写评分。重写硬失败按空输出记零，回退按实际输出评分并单列。
+
+| 输出 | 内容 |
+| --- | --- |
+| `outputs/runs/` | 检索对照的默认输出位置 |
+| `outputs/rewrite_runs/` | 重写与下游检索对照的默认输出位置 |
+| `summary.csv` | 每个策略的汇总指标与计数 |
+| `details.csv`、`report.json` | 每题的 Query、参考、检索结果、耗时及错误记录 |
+| `manifest.json`、`checkpoint.jsonl` | 运行签名与已记录的逐题结果 |
+| `blind_review_reviewer1.csv`、`blind_review_reviewer2.csv`、`blind_review_key.json` | 重写实验生成的两份盲评表和单独保管的组别映射 |
+
+需要续跑时，首次运行显式设置 `--output-dir` 指向新目录。中断后使用同一目录、相同参数并加 `--resume`。程序校验数据、配置、源码及实际模型身份，跳过已记录的题目。换模型、换数据或重新评测时，用新的输出目录。A/B/C 提示与人工盲评细节见[问题重写实验说明](docs/问题重写实验说明.md)。
+
+## 代码从哪里读
+
+| 文件 | 职责 |
+| --- | --- |
+| `prepare_qrecc.py`、`rag/data.py`、`rag/rewrite_data.py` | 语料准备、题目校验、历史和评测标签适配 |
+| `rag/rewriters.py` | 查询策略注册、A/B 提示词、输出校验、修复与回退 |
+| `rag/compcqr.py` | C 的组件生成、查询组合、跨查询 RRF 与最佳段落选择 |
+| `rag/retrieval.py` | 分词、索引、BM25 与向量检索、RRF 融合 |
+| `rag/pipeline.py`、`rag/llm.py` | 串联历史、重写、检索和回答，封装 Ollama 请求 |
+| `evaluate.py`、`evaluate_rewrite.py`、`rag/metrics.py` | 批量检索、重写对照与指标计算 |
+| `rag/run_cache.py` | 运行签名、检查点与续跑 |
+| `app.py`、`web/` | 本地服务、RAG 首页和逐题 A/B/C 页面 |
+| `tests/` | 检查数据、查询策略、检索、评测、缓存和网页行为 |
+
+运行测试可双击 `run_tests.bat`，或执行 `& $py -X utf8 -B -m unittest discover -s tests -v`。进一步阅读可参考[代码阅读顺序](docs/阅读顺序.md)。启动入口以本页的命令为准。
+
+## C · CompCQR 接入说明
+
+C 使用两次模型调用生成独立改写及假设答案、后续问题及假设答案，再与原问题组合。五个非空组件最多形成 325 条有序查询；BM25 使用 31 种无序子集。每条查询默认检索 Top-100，跨查询按 RRF（常数 0）和出现频次融合，再用第三次模型调用从最多 5 个候选段落中选择一篇提升到第一名。现有混合检索的 BM25/向量 RRF（常数 60）是内部的另一层融合。假设答案只扩展查询，回答证据来自实际检索的段落。
+
+这是使用 Qwen、bge-m3 和本地子集的 CompCQR 适配实现，模型、检索器和选择预算与论文原始实验不同。首次真实运行建议 `--limit 2`，之后固定参数再扩大。组件不完整、模型选择无效和检索错误均记录，选择失败时保留融合排名。完整流程、参数与论文差异见 [CompCQR 说明](docs/CompCQR说明.md)。
+
+A/B/C 的混合检索内部候选深度统一为 `hybrid_candidate_depth=400`，不随最终 Top-K 或 C 每查询检索深度改变；两路 RRF 仍使用常数 60。C 选择提示的 6,000 字符预算包含指令、问题、同样历史和段落，实际候选数以运行记录为准。

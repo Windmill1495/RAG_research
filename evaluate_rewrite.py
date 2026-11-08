@@ -15,21 +15,21 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from evaluate import PROJECT_DIR, corpus_fingerprint, is_fallback, mean, resolve_path, save_report
-from rag.config import load_config, offline_config
+from evaluate import PROJECT_DIR, compcqr_execution_scope, corpus_fingerprint, is_fallback, mean, method_errors, resolve_path, save_report
+from rag.config import add_compcqr_arguments, compcqr_overrides, load_config, offline_config
 from rag.data import load_passage_ids, public_input
 from rag.metrics import NORMALIZATION, passage_metrics, rouge_scores
 from rag.llm import runtime_embedding_identity, runtime_model_identity
 from rag.pipeline import HistorySelector, RAGEngine
 from rag.rewrite_data import REWRITE_DATA_FORMATS, load_rewrite_examples
-from rag.rewriters import AB_STRATEGIES, STRATEGIES
+from rag.rewriters import RESEARCH_STRATEGIES, STRATEGIES
 from rag.run_cache import RunCache, code_hashes, file_sha256
 
 
 # A future group can register a selector here and reuse B's complete rewrite flow.
 HISTORY_SELECTORS: dict[str, HistorySelector] = {}
 RETRIEVAL_TOP_K = 3
-RETRIEVAL_METRICS = ("gold_recall_at_1", "gold_recall_at_3", "mrr_at_3")
+RETRIEVAL_METRICS = ("gold_recall_at_1", "gold_recall_at_3", "mrr_at_3", "ndcg_at_3")
 
 
 def evaluate_rewrites(engine, examples, strategies, *, include_l=False, cache=None, progress=True,
@@ -60,6 +60,8 @@ def evaluate_rewrites(engine, examples, strategies, *, include_l=False, cache=No
                 "human_rewrite": example["human_rewrite"], "search_query": "",
                 "rewrite_source": "error", "rewrite_error": None, "rewrite_trace": {},
                 "latencies_ms": {}, "error": None,
+                "rouge_scope": "base_rewrite_only" if strategy == "compcqr" else "standalone_query",
+                "execution_scope": "component_generation_only" if strategy == "compcqr" else "single_query",
                 **rouge_scores("", example["human_rewrite"], include_l=include_l),
             }
             retrieve = retrieval_ids is not None and example["id"] in retrieval_ids
@@ -77,6 +79,7 @@ def evaluate_rewrites(engine, examples, strategies, *, include_l=False, cache=No
                            rewrite_error=result.get("rewrite_error"), rewrite_trace=result.get("rewrite_trace", {}),
                            visible_history=result.get("visible_history", example["history"]),
                            latencies_ms=dict(result.get("latencies_ms", {})))
+                row.update({field: result[field] for field in ("search_queries", "components") if field in result})
                 if selector is not None:
                     row["history_window"] = result["history_window"]
                     row["selected_history_positions"] = result["selected_history_positions"]
@@ -88,21 +91,33 @@ def evaluate_rewrites(engine, examples, strategies, *, include_l=False, cache=No
             if retrieve and not row["error"]:
                 retrieval_started = time.perf_counter()
                 try:
-                    hits = retriever.search(row["search_query"], RETRIEVAL_TOP_K)
+                    if strategy == "compcqr":
+                        # Reuse the generated components. Searching only the base
+                        # rewrite would discard CompCQR's fusion and selection.
+                        result = engine.retrieve_rewritten(result, RETRIEVAL_TOP_K, retriever=retriever)
+                        hits = result["hits"]
+                        row.update(rewrite_trace=result.get("rewrite_trace", {}),
+                                   latencies_ms=dict(result.get("latencies_ms", {})))
+                    else:
+                        hits = retriever.search(row["search_query"], RETRIEVAL_TOP_K)
                     retrieval_finished = time.perf_counter()
                     at_1 = passage_metrics(hits, row["positive_ids"], 1)
                     at_3 = passage_metrics(hits, row["positive_ids"], RETRIEVAL_TOP_K)
                     row.update(hits=hits, gold_recall_at_1=at_1["gold_recall_at_k"],
-                               gold_recall_at_3=at_3["gold_recall_at_k"], mrr_at_3=at_3["mrr_at_k"])
+                               gold_recall_at_3=at_3["gold_recall_at_k"], mrr_at_3=at_3["mrr_at_k"],
+                               ndcg_at_3=at_3["ndcg_at_k"])
                 except Exception as error:
                     row["retrieval_error"] = f"{type(error).__name__}: {error}"
                     if progress:
                         print(f"\n[{strategy}/{example['id']}] retrieval: {row['retrieval_error']}", file=sys.stderr)
                 else:
                     elapsed = (retrieval_finished - retrieval_started) * 1000
-                    row["latencies_ms"]["retrieval"] = round(elapsed, 2)
-                    if "rewrite" in row["latencies_ms"]:
-                        row["latencies_ms"]["total"] = round(row["latencies_ms"]["rewrite"] + elapsed, 2)
+                    if strategy != "compcqr":
+                        row["latencies_ms"]["retrieval"] = round(elapsed, 2)
+                        if "rewrite" in row["latencies_ms"]:
+                            row["latencies_ms"]["total"] = round(row["latencies_ms"]["rewrite"] + elapsed, 2)
+            if strategy == "compcqr":
+                row["execution_scope"] = compcqr_execution_scope(row, retrieval_attempted=retrieve)
             row["wall_time_ms"] = (time.perf_counter() - started) * 1000
             row["cache_key"] = key
             if cache:
@@ -121,7 +136,9 @@ def evaluate_rewrites(engine, examples, strategies, *, include_l=False, cache=No
     for strategy in strategies:
         group = [row for row in details if row["strategy"] == strategy]
         pure = [row for row in group if not row["error"] and not is_fallback(row)
-                and not row.get("rewrite_error") and str(row["rewrite_source"]).startswith("llm")]
+                and not row.get("rewrite_error") and not method_errors(row)
+                and (str(row["rewrite_source"]).startswith("llm") or row["rewrite_source"] == "compcqr_llm")]
+        phase_keys = sorted({key for row in group for key in row.get("latencies_ms", {})})
         summaries.append({
             "strategy": strategy, "sample_count": len(group),
             "error_count": sum(bool(row["error"]) for row in group),
@@ -129,6 +146,11 @@ def evaluate_rewrites(engine, examples, strategies, *, include_l=False, cache=No
             "fallback_count": sum(is_fallback(row) for row in group),
             "repair_count": sum(bool(row["rewrite_trace"].get("repaired")) for row in group),
             "llm_calls": sum(row["rewrite_trace"].get("llm_calls", 0) for row in group),
+            "method_error_count": sum(bool(method_errors(row)) for row in group),
+            "selection_error_count": sum(bool(row["rewrite_trace"].get("selection_error")) for row in group),
+            "mean_query_count": mean([row["rewrite_trace"].get("query_count", 1) for row in group]),
+            "rouge_scope": "base_rewrite_only" if strategy == "compcqr" else "standalone_query",
+            "execution_scopes": dict(Counter(row.get("execution_scope", "single_query") for row in group)),
             "rewrite_sources": dict(Counter(row["rewrite_source"] for row in group)),
             **{field: mean([row[field] for row in group]) for field in score_fields},
             "pure_llm_success_subset_n": len(pure),
@@ -136,6 +158,8 @@ def evaluate_rewrites(engine, examples, strategies, *, include_l=False, cache=No
             "mean_wall_time_ms": mean([row["wall_time_ms"] for row in group]),
             "mean_rewrite_ms": mean([row["latencies_ms"]["rewrite"] for row in group
                                       if isinstance(row.get("latencies_ms", {}).get("rewrite"), (int, float))]),
+            "mean_latencies_ms": {key: mean([row["latencies_ms"][key] for row in group
+                if isinstance(row.get("latencies_ms", {}).get(key), (int, float))]) for key in phase_keys},
             "score_policy": "Main ROUGE averages all fixed samples (hard failures zero); strategy fallbacks retained and separately counted. Pure LLM success subset is diagnostic only.",
         })
         if retrieval_ids is not None:
@@ -170,7 +194,8 @@ def export_blind_review(output_dir, details, *, count=30, seed=20261102):
             writer.writeheader()
             for number, row in enumerate(rows, 1):
                 review_id = f"R{number:04d}"
-                key[review_id] = {"id": row["id"], "strategy": row["strategy"], "error": row["error"]}
+                key[review_id] = {"id": row["id"], "strategy": row["strategy"], "error": row["error"],
+                                  "prediction_scope": row.get("rouge_scope", "standalone_query")}
                 review_history = row.get("history_window", row.get("visible_history", row["history"]))
                 writer.writerow({"review_id": review_id, "sample_id": row["id"], "question": row["question"],
                                  "visible_history": json.dumps(review_history, ensure_ascii=False),
@@ -181,7 +206,8 @@ def export_blind_review(output_dir, details, *, count=30, seed=20261102):
         "同一批固定样本用于所有方法；等价措辞可以合格，不要求逐字等于参考。\n\n"
         "每项填写 pass/fail/na：指代与省略是否补全；意图、实体及时间/数量/否定约束是否保留；是否添加无历史依据的事实；能否独立理解。\n"
         "所有适用项通过才整体合格；空输出、调用失败也留在固定样本分母中。先独立评分，再讨论分歧并记录一致率。\n"
-        "人工 Rewrite 不一定是唯一正确表达。ROUGE 和参考词面相似不等于语义正确，也不保证检索改善。\n",
+        "人工 Rewrite 不一定是唯一正确表达。ROUGE 和参考词面相似不等于语义正确，也不保证检索改善。\n"
+        "包含 CompCQR 时，评审文本仅为其基础独立重写；不拼接所有候选 Query，也不代表完整多查询检索效果。\n",
         encoding="utf-8")
 
 
@@ -218,7 +244,7 @@ def main():
     parser.add_argument("--dataset", choices=["qrecc"], default="qrecc")
     parser.add_argument("--mode", choices=["demo", "ollama"], default="demo")
     parser.add_argument("--strategies", nargs="+", choices=(*STRATEGIES, *HISTORY_SELECTORS),
-                        default=AB_STRATEGIES, help="Defaults to A: rewrite and B: structured")
+                        default=RESEARCH_STRATEGIES, help="Defaults to A: rewrite, B: structured, C: compcqr")
     parser.add_argument("--model", help="Installed Ollama model tag, overriding config.json for this run")
     parser.add_argument("--split", choices=["train", "dev", "test", "all"],
                         help="Defaults to all for the configured data or official JSON, dev for custom JSONL")
@@ -233,6 +259,7 @@ def main():
                         help="Allow diagnostic scoring when the corpus lacks annotated passage IDs")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--resume", action="store_true")
+    add_compcqr_arguments(parser)
     args = parser.parse_args()
     if args.limit is not None and args.limit < 1 or args.review_count < 0:
         parser.error("limit must be positive and review-count nonnegative")
@@ -242,6 +269,7 @@ def main():
         parser.error("--allow-partial-corpus requires retrieval")
     try:
         overrides = {"model": args.model.strip()} if args.model is not None else {}
+        overrides.update(compcqr_overrides(args))
         config = load_config(PROJECT_DIR, overrides, profile="qrecc")
         if args.mode == "demo":
             config = offline_config(config)
@@ -286,9 +314,10 @@ def main():
                     "runtime_model_identity": model_identity,
                     "created_at": datetime.now().astimezone().isoformat(),
                     "metric_warning": "Macro lexical ROUGE with no stemming/stop-word removal; not semantic accuracy. Equivalent wording may be valid.",
+                    "compcqr_policy": "CompCQR ROUGE and blind review score its base independent rewrite only. With --rewrite-only, no retrieval/fusion/selection is executed. Otherwise eligible samples score the final fused/selected passage ranking; component and selection failures are separately counted." if "compcqr" in strategies else None,
                     "failure_policy": "All fixed samples are scored; hard failures have empty prediction and zero scores. Fallbacks separately counted; successful-only LLM subset is auxiliary.",
                     "retrieval_policy": "Score annotated samples with at least one indexed positive. Partial-coverage runs retain all annotated IDs in each scored sample's recall denominator. Failed rewrites or retrieval calls receive zero retrieval scores on eligible samples. Unlabeled and uncovered samples contribute only to rewrite quality." if retrieval else None,
-                    "latency_warning": "Rewrite time includes history selection, model calls, validation and repair when used. Query total is rewrite plus retrieval, excluding initialization and scoring. Retrieval timing summaries use successful searches. Cold model loads and resumed rows affect timing.",
+                    "latency_warning": "Rewrite time includes component generation or history selection, model calls, validation and repair. CompCQR query total also includes multi-query retrieval, fusion and document selection. Times exclude initialization and scoring. Retrieval timing summaries use successful searches. Cold model loads and resumed rows affect timing.",
                     "demo_warning": "Heuristic demo only, not LLM rewrite-quality results." if args.mode == "demo" else None}
         export_blind_review(output, details, count=args.review_count, seed=args.review_seed)
         save_report(output, metadata, summaries, details)
@@ -297,9 +326,11 @@ def main():
         return 1
     for row in summaries:
         summary = f"{row['strategy']:<12} ROUGE-1 F1={row['rouge1_f1']:.4f} n={row['sample_count']} errors={row['error_count']} fallbacks={row['fallback_count']}"
+        if row["strategy"] == "compcqr":
+            summary += f" scope=base_rewrite_only method_errors={row['method_error_count']}"
         if row.get("retrieval_sample_count"):
             summary += (f" | Gold Recall@1={row['gold_recall_at_1']:.4f} Gold Recall@3={row['gold_recall_at_3']:.4f} "
-                        f"MRR@3={row['mrr_at_3']:.4f} retrieval_n={row['retrieval_sample_count']} "
+                        f"MRR@3={row['mrr_at_3']:.4f} nDCG@3={row['ndcg_at_3']:.4f} retrieval_n={row['retrieval_sample_count']} "
                         f"retrieval_errors={row['retrieval_error_count']}")
         print(summary)
     if retrieval is not None:
@@ -308,7 +339,7 @@ def main():
     print(f"Saved rewrite report and two blind-review templates: {output.resolve()}")
     if args.mode == "demo":
         print("DEMO: heuristic rewrites and optional BM25 retrieval, not a hybrid LLM experiment.")
-    return int(any(row["error_count"] or row["rewrite_error_count"] or row.get("retrieval_error_count")
+    return int(any(row["error_count"] or row["rewrite_error_count"] or row.get("retrieval_error_count") or row["method_error_count"]
                    for row in summaries))
 
 

@@ -16,7 +16,8 @@ from .run_cache import make_signature
 
 
 AB_STRATEGIES = ("rewrite", "structured")
-STRATEGIES = ("current", "history", *AB_STRATEGIES)
+RESEARCH_STRATEGIES = (*AB_STRATEGIES, "compcqr")
+STRATEGIES = ("current", "history", *RESEARCH_STRATEGIES)
 PROMPT_VERSION = "shared-role-history-preserve-language-v1"
 REFERENCE_EN = re.compile(r"\b(?:it|its|they|them|their|he|him|his|she|her|this|that|these|those|there)\b", re.I)
 REFERENCE_ZH = re.compile(r"它|他们|她们|它们|那里|这个|那个|上述|该馆|该校|这些|那些|那边|其|他|她")
@@ -208,6 +209,10 @@ def build_query(question: str, history: list[dict], strategy: str, *, client,
             or not isinstance(m.get("content"), str) for m in history):
         raise ValueError("history 必须使用明确的 user/assistant 角色；不能推测交替角色")
     question = question.strip()
+    if strategy == "compcqr":
+        # Local import avoids coupling the single-query A/B code to orchestration.
+        from .compcqr import build_plan
+        return build_plan(question, history, client=client, mode=mode, config=config)
     trace = {"strategy": strategy, "prompt_version": PROMPT_VERSION,
              "history_signature": make_signature(history), "visible_history_messages": len(history),
              "llm_calls": 0, "repaired": False, "fallback": False,

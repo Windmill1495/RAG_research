@@ -42,7 +42,9 @@ def runtime_model_identity(config: dict, mode: str) -> dict:
     client = OllamaClient(config["base_url"], config["model"], config["embedding_model"], timeout=5)
     return {"mode": mode, "base_url": client.base_url, **_installed_identity(client, client.model),
             **client.thinking_option,
-            "generation_options": {"temperature": 0.0, "seed": 42, "num_ctx": 8192, "num_predict": 512}}
+            "generation_options": {"temperature": 0.0, "seed": 42,
+                                   "num_ctx": config.get("llm_num_ctx", 8192),
+                                   "num_predict": config.get("llm_num_predict", 512)}}
 
 
 def runtime_embedding_identity(config: dict) -> dict | None:
@@ -73,6 +75,7 @@ class OllamaClient:
         model: str = DEFAULT_MODEL,
         embedding_model: str = "bge-m3",
         timeout: float = 180,
+        *, num_ctx: int = 8192, num_predict: int = 512,
     ) -> None:
         parsed = urlsplit(base_url)
         if (
@@ -95,6 +98,10 @@ class OllamaClient:
         self.thinking_option = {"think": False} if model in QWEN3_REWRITE_TAGS else {}
         self.embedding_model = embedding_model
         self.timeout = float(timeout)
+        if type(num_ctx) is not int or num_ctx < 1024 or type(num_predict) is not int or num_predict < 1:
+            raise ValueError("num_ctx/num_predict 必须是有效的正整数")
+        self.num_ctx = num_ctx
+        self.num_predict = num_predict
 
     def _request(self, path: str, payload: dict | None = None) -> dict:
         body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -150,8 +157,8 @@ class OllamaClient:
                 "keep_alive": "5m",
                 "options": {
                     "temperature": temperature,
-                    "num_ctx": 8192,
-                    "num_predict": 512,
+                    "num_ctx": self.num_ctx,
+                    "num_predict": self.num_predict,
                     "seed": 42,
                 },
             },

@@ -12,7 +12,7 @@ from rag.config import load_config, offline_config
 from rag.llm import OllamaClient, OllamaError, runtime_model_identity
 from rag.pipeline import RAGEngine, clean_history
 from rag.rewrite_data import load_rewrite_examples
-from rag.rewriters import AB_STRATEGIES
+from rag.rewriters import AB_STRATEGIES, RESEARCH_STRATEGIES
 
 ROOT = Path(__file__).resolve().parent
 
@@ -143,7 +143,7 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
                         "mode": default_mode, "model": config["model"], "models": models,
                         "dataset": config["dataset"],
                         "ollama_available": available, "connection_error": connection_error,
-                        "config": {key: settings[key] for key in ("dataset", "corpus_format", "bm25_mode", "retriever_backend", "chunk_size", "overlap", "top_k", "context_char_budget", "history_turns")},
+                        "config": {key: settings[key] for key in ("dataset", "corpus_format", "bm25_mode", "retriever_backend", "hybrid_candidate_depth", "chunk_size", "overlap", "top_k", "context_char_budget", "history_turns")},
                         "initialization": state,
                         "index": engine.retriever.stats() if engine else {"built": False},
                     })
@@ -162,7 +162,8 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
                     self.json_response({"samples": samples, "mode": engine.mode,
                                         "model": engine.config["model"],
                                         "retriever_backend": engine.config["retriever_backend"] if engine.mode == "ollama" else None,
-                                        "history_turns": engine.config["history_turns"]})
+                                        "history_turns": engine.config["history_turns"],
+                                        "strategies": list(RESEARCH_STRATEGIES)})
                 except (OSError, ValueError) as error:
                     self.json_response({"error": str(error)}, 503)
                 return
@@ -218,6 +219,13 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
             sample_id = body.get("sample_id")
             if not isinstance(sample_id, str) or not sample_id:
                 raise ValueError("sample_id 必须为非空字符串")
+            # Old API callers retain their A/B contract; the current page requests A/B/C.
+            strategies = body.get("strategies", list(AB_STRATEGIES))
+            if (not isinstance(strategies, list) or not strategies
+                    or any(not isinstance(value, str) or value not in RESEARCH_STRATEGIES
+                           for value in strategies)
+                    or len(strategies) != len(set(strategies))):
+                raise ValueError("strategies 必须是不重复的 rewrite、structured、compcqr 列表")
             engine = get_rewrite_engine()
             sample = next((row for row in rewrite_examples(engine) if row["id"] == sample_id), None)
             if sample is None:
@@ -228,7 +236,7 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
                 retrieval = {}
                 if engine.mode == "ollama" and sample.get("positive_ids"):
                     retrieval = {"retrieval_ids": {sample_id}, "retriever": get_engine("ollama").retriever}
-                _, rows = evaluate_rewrites(engine, [sample], AB_STRATEGIES, progress=False, **retrieval)
+                _, rows = evaluate_rewrites(engine, [sample], strategies, progress=False, **retrieval)
             self.json_response({
                 "sample_id": sample_id, "mode": engine.mode,
                 "model": identity.get("name", engine.config["model"]),
@@ -250,7 +258,7 @@ def main():
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--dataset", choices=["qrecc"], default="qrecc")
     parser.add_argument("--page", choices=["rag", "rewrite"], default="rag", help="浏览器打开的初始页面")
-    parser.add_argument("--rewrite-model", help="覆盖重写 A/B 页使用的 Ollama 模型")
+    parser.add_argument("--rewrite-model", help="覆盖重写 A/B/C 页使用的 Ollama 模型")
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     try:

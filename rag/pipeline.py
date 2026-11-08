@@ -65,6 +65,7 @@ class RAGEngine:
         self.client = OllamaClient(
             base_url=self.config["base_url"], model=self.config["model"],
             embedding_model=self.config["embedding_model"], timeout=self.config["request_timeout"],
+            num_ctx=self.config["llm_num_ctx"], num_predict=self.config["llm_num_predict"],
         )
         # Different backends/configurations may share this cache; Retriever validates its fingerprint.
         self.retriever = Retriever(
@@ -75,6 +76,7 @@ class RAGEngine:
             corpus_format=self.config["corpus_format"], bm25_mode=self.config["bm25_mode"],
             embedding_digest=self.config.get("embedding_digest"),
             embedding_input_policy=EMBEDDING_INPUT_POLICY,
+            hybrid_candidate_depth=self.config["hybrid_candidate_depth"],
         )
         self._lock = threading.RLock()
         if build_index:
@@ -120,6 +122,8 @@ class RAGEngine:
             "question": question, "search_query": plan["query"], "strategy": strategy,
             "rewrite_source": plan["source"], "rewrite_error": plan["error"],
             "rewrite_trace": plan.get("trace", {}),
+            **({"search_queries": plan["queries"], "components": plan["components"],
+                "rouge_scope": "base_rewrite_only"} if strategy == "compcqr" else {}),
             "visible_history": messages,
             **selection,
             "mode": self.mode, "dataset": self.config["dataset"],
@@ -137,16 +141,38 @@ class RAGEngine:
         count = self.config["top_k"] if top_k is None else top_k
         if type(count) is not int or not 1 <= count <= 20:
             raise ValueError("top_k 必须为1到20的整数")
-        start = time.perf_counter()
         result = self.rewrite_query(question, history, strategy)
-        rewritten = time.perf_counter()
+        return self.retrieve_rewritten(result, count)
+
+    def retrieve_rewritten(self, result: dict, top_k: int | None = None, *, retriever=None) -> dict:
+        """Execute an existing query plan without generating it again.
+
+        Evaluation and the web page share this path, so C's fused/selected hits
+        cannot accidentally be overwritten by a single-query re-search.
+        """
+        count = self.config["top_k"] if top_k is None else top_k
+        if type(count) is not int or not 1 <= count <= 20:
+            raise ValueError("top_k 必须为1到20的整数")
+        result = {**result, "latencies_ms": dict(result["latencies_ms"])}
+        target = self.retriever if retriever is None else retriever
+        started = time.perf_counter()
         with self._lock:
-            hits = self.retriever.search(result["search_query"], count)
+            if result["strategy"] == "compcqr":
+                from .compcqr import retrieve_plan
+                value = retrieve_plan(result["question"], result["visible_history"], result["search_queries"],
+                                      retriever=target, client=self.client, mode=self.mode,
+                                      config=self.config, trace=result["rewrite_trace"])
+                hits = value["hits"][:count]
+                result["rewrite_trace"] = value["trace"]
+                result["latencies_ms"].update(value["latencies_ms"])
+            else:
+                hits = target.search(result["search_query"], count)
         finished = time.perf_counter()
         result["hits"] = hits
-        result["latencies_ms"] = {"rewrite": round((rewritten-start)*1000, 2),
-                                  "retrieval": round((finished-rewritten)*1000, 2),
-                                  "total": round((finished-start)*1000, 2)}
+        if result["strategy"] != "compcqr":
+            result["latencies_ms"]["retrieval"] = round((finished-started)*1000, 2)
+        result["latencies_ms"]["total"] = round(result["latencies_ms"].get("rewrite", 0)
+                                               + (finished-started)*1000, 2)
         return result
 
     def answer(self, question: str, history: list | None = None, strategy: str = "rewrite", top_k: int | None = None) -> dict:
@@ -211,6 +237,8 @@ class RAGEngine:
             warnings.append("模型未标注来源编号，请人工核验依据。")
         if result["rewrite_error"]:
             warnings.append("LLM查询重写失败，本轮使用启发式回退；详见rewrite_error。")
+        if result["strategy"] == "compcqr" and result["rewrite_trace"].get("stage_errors"):
+            warnings.append("CompCQR 部分阶段未完成，已明确记录回退；请查看阶段错误。")
         result.update({"answer": answer, "warnings": warnings})
         result["latencies_ms"].update({
             "context": round((generation_start-context_start)*1000, 2),

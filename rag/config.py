@@ -1,5 +1,6 @@
 """Load a small JSON configuration without third-party dependencies."""
 import json
+import math
 from pathlib import Path
 
 DEFAULT_MODEL = "qwen3:1.7b"
@@ -22,7 +23,35 @@ DEFAULTS = {
     "eval_path": "data/qrecc/questions.jsonl",
     "answer_language": "en",
     "bm25_mode": "inverted",
+    "hybrid_candidate_depth": 400,
+    "compcqr_max_components": 5,
+    "compcqr_retrieval_depth": 100,
+    "compcqr_rrf_k": 0,
+    "compcqr_selection_top_k": 5,
+    "compcqr_passage_chars": 700,
+    "compcqr_selection_char_budget": 6000,
+    "compcqr_select": True,
+    "llm_num_ctx": 8192,
+    "llm_num_predict": 512,
 }
+
+
+def add_compcqr_arguments(parser) -> None:
+    """Shared C settings; omitted flags preserve the JSON profile."""
+    for flag in ("max-components", "retrieval-depth", "selection-top-k"):
+        parser.add_argument("--compcqr-" + flag, type=int, default=None)
+    parser.add_argument("--compcqr-rrf-k", type=float, default=None)
+    parser.add_argument("--compcqr-no-selection", action="store_true",
+                        help="Ablation: keep the fused ranking without the third LLM call")
+
+
+def compcqr_overrides(args) -> dict:
+    values = {key: getattr(args, key, None) for key in (
+        "compcqr_max_components", "compcqr_retrieval_depth",
+        "compcqr_selection_top_k", "compcqr_rrf_k")}
+    if getattr(args, "compcqr_no_selection", False):
+        values["compcqr_select"] = False
+    return {key: value for key, value in values.items() if value is not None}
 
 
 def offline_config(config: dict) -> dict:
@@ -85,4 +114,18 @@ def load_config(project_dir: Path, overrides: dict | None = None, profile: str |
         raise ValueError("bm25_mode 必须为 scan 或 inverted")
     if config["answer_language"] not in {"auto", "zh", "en"}:
         raise ValueError("answer_language 必须为 auto、zh 或 en")
+    limits = {"compcqr_max_components": (1, 5), "compcqr_retrieval_depth": (1, 1000),
+              "hybrid_candidate_depth": (1, 10000),
+              "compcqr_selection_top_k": (1, 50), "compcqr_passage_chars": (50, 4000),
+              "compcqr_selection_char_budget": (200, 100000),
+              "llm_num_ctx": (1024, 131072), "llm_num_predict": (128, 16384)}
+    for name, (low, high) in limits.items():
+        if type(config[name]) is not int or not low <= config[name] <= high:
+            raise ValueError(f"{name} 必须是 {low} 到 {high} 的整数")
+    if (isinstance(config["compcqr_rrf_k"], bool)
+            or not isinstance(config["compcqr_rrf_k"], (int, float))
+            or not math.isfinite(config["compcqr_rrf_k"]) or config["compcqr_rrf_k"] < 0):
+        raise ValueError("compcqr_rrf_k 必须是非负有限数")
+    if type(config["compcqr_select"]) is not bool:
+        raise ValueError("compcqr_select 必须是布尔值")
     return config
