@@ -8,7 +8,7 @@ from rag.pipeline import RAGEngine, STRATEGIES
 
 def main():
     parser = argparse.ArgumentParser(description="简单多轮RAG命令行")
-    parser.add_argument("--mode", choices=["demo", "ollama"], default="demo")
+    parser.add_argument("--mode", choices=["demo", "ollama"], default="ollama")
     parser.add_argument("--dataset", choices=["qrecc"], default="qrecc")
     parser.add_argument("--strategy", choices=STRATEGIES, default="rewrite")
     parser.add_argument("--top-k", type=int)
@@ -16,7 +16,7 @@ def main():
     root = Path(__file__).resolve().parent
     config = load_config(root, profile=args.dataset)
     engine = RAGEngine(root, offline_config(config) if args.mode == "demo" else config, args.mode)
-    print(f"模式: {args.mode}；策略: {args.strategy}。/clear 清空历史，/quit 退出。")
+    print(f"模式: {args.mode}；/clear 清空历史，/quit 退出。")
     if args.mode == "demo":
         print("离线模式仅摘录证据，查询重写为启发式规则，未调用大模型。")
     history = []

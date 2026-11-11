@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import load_config
+from . import compcqr
 from .llm import EMBEDDING_INPUT_POLICY, OllamaClient, OllamaError, runtime_embedding_identity
 from .retrieval import Retriever
 from .rewriters import STRATEGIES, build_query, heuristic_rewrite
@@ -137,6 +138,18 @@ class RAGEngine:
         count = self.config["top_k"] if top_k is None else top_k
         if type(count) is not int or not 1 <= count <= 20:
             raise ValueError("top_k 必须为1到20的整数")
+        if self.mode == "ollama":
+            start = time.perf_counter()
+            messages = clean_history(history, self.config["history_turns"])
+            with self._lock:
+                hits, trace = compcqr.retrieve(self, question.strip(), messages, count)
+            elapsed = round((time.perf_counter() - start) * 1000, 2)
+            return {"question": question.strip(), "search_query": trace["components"]["mq"],
+                    "strategy": "compcqr", "rewrite_source": "compcqr",
+                    "rewrite_error": None, "rewrite_trace": trace,
+                    "visible_history": messages, "mode": self.mode,
+                    "dataset": self.config["dataset"], "backend": self.config["retriever_backend"],
+                    "hits": hits, "latencies_ms": {"rewrite": 0, "retrieval": elapsed, "total": elapsed}}
         start = time.perf_counter()
         result = self.rewrite_query(question, history, strategy)
         rewritten = time.perf_counter()

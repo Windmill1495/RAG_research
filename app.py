@@ -246,7 +246,7 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
 
 def main():
     parser = argparse.ArgumentParser(description="本地多轮RAG演示页面")
-    parser.add_argument("--mode", choices=["auto", "demo", "ollama"], default="auto")
+    parser.add_argument("--mode", choices=["auto", "demo", "ollama"], default="ollama")
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--dataset", choices=["qrecc"], default="qrecc")
     parser.add_argument("--page", choices=["rag", "rewrite"], default="rag", help="浏览器打开的初始页面")
@@ -261,7 +261,7 @@ def main():
     url = f"http://127.0.0.1:{server.server_port}"
     if args.page == "rewrite":
         url += "/rewrite"
-    print(f"RAG Research 已启动：{url}；数据集={args.dataset}\n按 Ctrl+C 停止。auto模式在检测不到配置模型时使用离线演示。")
+    print(f"RAG Research 已启动：{url}；数据集={args.dataset}\n按 Ctrl+C 停止。默认 Ollama 模式执行 CompCQR。")
     if not args.no_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:
