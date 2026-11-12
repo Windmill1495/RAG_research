@@ -4,6 +4,10 @@
 
 从 [实验指南](docs/实验指南.md) 查看三个实验的命令和指标。主实验细节见 [问题重写实验说明](docs/问题重写实验说明.md)，代码结构见 [阅读顺序](docs/阅读顺序.md)。
 
+## AdaQR（EMNLP 2024）
+
+已新增完整的 SFT → 自采样 → 答案似然奖励 → DPO 训练流程，以及独立的 `adaqr` 推理策略。训练需在 CUDA 主机运行；本机 Mac Air 不执行模型训练。数据要求、运行命令和与论文实验配置的差异见 [AdaQR 接入说明](docs/AdaQR.md)。现有 A/B 默认策略不变。
+
 ## 运行 307 题 A/B 对照
 
 在项目目录打开 PowerShell。全局默认模型为 `qwen3:1.7b`，主实验使用 `qwen3:8b`。运行前启动 Ollama，用 `ollama list` 确认已安装 `qwen3:8b` 和 `bge-m3`。缺少时可分别用 `ollama pull qwen3:8b` 和 `ollama pull bge-m3` 安装。

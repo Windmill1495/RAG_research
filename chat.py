@@ -3,18 +3,20 @@ import argparse
 from pathlib import Path
 
 from rag.config import load_config, offline_config
-from rag.pipeline import RAGEngine, STRATEGIES
+from rag.pipeline import RAGEngine
+from rag.rewriters import ALL_STRATEGIES
 
 
 def main():
     parser = argparse.ArgumentParser(description="简单多轮RAG命令行")
     parser.add_argument("--mode", choices=["demo", "ollama"], default="demo")
     parser.add_argument("--dataset", choices=["qrecc"], default="qrecc")
-    parser.add_argument("--strategy", choices=STRATEGIES, default="rewrite")
+    parser.add_argument("--strategy", choices=ALL_STRATEGIES, default="rewrite")
     parser.add_argument("--top-k", type=int)
+    parser.add_argument("--adaqr-model-path", type=Path)
     args = parser.parse_args()
     root = Path(__file__).resolve().parent
-    config = load_config(root, profile=args.dataset)
+    config = load_config(root, {"adaqr_model_path": str(args.adaqr_model_path.resolve())} if args.adaqr_model_path else None, profile=args.dataset)
     engine = RAGEngine(root, offline_config(config) if args.mode == "demo" else config, args.mode)
     print(f"模式: {args.mode}；策略: {args.strategy}。/clear 清空历史，/quit 退出。")
     if args.mode == "demo":

@@ -22,7 +22,7 @@ from rag.metrics import NORMALIZATION, passage_metrics, rouge_scores
 from rag.llm import runtime_embedding_identity, runtime_model_identity
 from rag.pipeline import HistorySelector, RAGEngine
 from rag.rewrite_data import REWRITE_DATA_FORMATS, load_rewrite_examples
-from rag.rewriters import AB_STRATEGIES, STRATEGIES
+from rag.rewriters import AB_STRATEGIES, ALL_STRATEGIES, STRATEGIES
 from rag.run_cache import RunCache, code_hashes, file_sha256
 
 
@@ -217,9 +217,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=["qrecc"], default="qrecc")
     parser.add_argument("--mode", choices=["demo", "ollama"], default="demo")
-    parser.add_argument("--strategies", nargs="+", choices=(*STRATEGIES, *HISTORY_SELECTORS),
+    parser.add_argument("--strategies", nargs="+", choices=(*ALL_STRATEGIES, *HISTORY_SELECTORS),
                         default=AB_STRATEGIES, help="Defaults to A: rewrite and B: structured")
     parser.add_argument("--model", help="Installed Ollama model tag, overriding config.json for this run")
+    parser.add_argument("--adaqr-model-path", type=Path, help="Trained AdaQR DPO adapter directory")
     parser.add_argument("--split", choices=["train", "dev", "test", "all"],
                         help="Defaults to all for the configured data or official JSON, dev for custom JSONL")
     parser.add_argument("--data", type=Path)
@@ -242,6 +243,8 @@ def main():
         parser.error("--allow-partial-corpus requires retrieval")
     try:
         overrides = {"model": args.model.strip()} if args.model is not None else {}
+        if args.adaqr_model_path:
+            overrides["adaqr_model_path"] = str(args.adaqr_model_path.resolve())
         config = load_config(PROJECT_DIR, overrides, profile="qrecc")
         if args.mode == "demo":
             config = offline_config(config)
@@ -259,12 +262,18 @@ def main():
                 config = {**config, "embedding_digest": embedding_identity["digest"]}
                 retrieval["embedding_model_identity"] = embedding_identity
         strategies = list(dict.fromkeys(args.strategies))
+        adaqr_identity = None
+        if "adaqr" in strategies:
+            if args.mode != "ollama" or not config.get("adaqr_model_path"):
+                raise ValueError("AdaQR requires --mode ollama and --adaqr-model-path")
+            from rag.adaqr_model import adapter_identity
+            adaqr_identity = adapter_identity(config["adaqr_model_path"])
         output = args.output_dir or PROJECT_DIR / "outputs" / "rewrite_runs" / datetime.now().astimezone().strftime("%Y%m%d_%H%M%S_%f")
         model_identity = runtime_model_identity(config, args.mode)
         identity = {"task": "rewrite_quality", "dataset": "qrecc", "data_sha256": file_sha256(data_path),
                     "config": config, "mode": args.mode, "split": split, "strategies": strategies,
                     "data_format": data_format, "retrieval": retrieval,
-                    "runtime_model_identity": model_identity,
+                    "runtime_model_identity": model_identity, "adaqr_adapter_identity": adaqr_identity,
                     "sample_ids": [row["id"] for row in examples], "code": code_hashes(PROJECT_DIR),
                     "normalization": NORMALIZATION, "rouge_l": args.rouge_l,
                     "review_count": args.review_count, "review_seed": args.review_seed}
@@ -283,7 +292,7 @@ def main():
                     "limit": args.limit,
                     "config": config, "run_signature": cache.signature, "normalization": NORMALIZATION,
                     "retrieval": retrieval, "initialization_ms": initialization_ms,
-                    "runtime_model_identity": model_identity,
+                    "runtime_model_identity": model_identity, "adaqr_adapter_identity": adaqr_identity,
                     "created_at": datetime.now().astimezone().isoformat(),
                     "metric_warning": "Macro lexical ROUGE with no stemming/stop-word removal; not semantic accuracy. Equivalent wording may be valid.",
                     "failure_policy": "All fixed samples are scored; hard failures have empty prediction and zero scores. Fallbacks separately counted; successful-only LLM subset is auxiliary.",

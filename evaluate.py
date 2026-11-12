@@ -16,7 +16,7 @@ from rag.data import load_examples, load_passage_ids, public_input
 from rag.metrics import document_metrics, passage_metrics, rouge_scores
 from rag.llm import runtime_embedding_identity, runtime_model_identity
 from rag.pipeline import RAGEngine
-from rag.rewriters import STRATEGIES
+from rag.rewriters import ALL_STRATEGIES
 from rag.run_cache import RunCache, code_hashes, file_sha256
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -189,7 +189,8 @@ def parse_args():
     parser.add_argument("--dataset", choices=["qrecc"], default="qrecc")
     parser.add_argument("--mode", choices=["demo", "ollama"], default="demo")
     parser.add_argument("--model", help="Installed Ollama model tag, overriding config.json for this run")
-    parser.add_argument("--strategies", nargs="+", choices=STRATEGIES, default=["current", "history", "rewrite"])
+    parser.add_argument("--adaqr-model-path", type=Path, help="Trained AdaQR DPO adapter directory")
+    parser.add_argument("--strategies", nargs="+", choices=ALL_STRATEGIES, default=["current", "history", "rewrite"])
     parser.add_argument("--split", choices=["dev", "test", "all"], default="dev")
     parser.add_argument("--top-k", type=int)
     parser.add_argument("--chunk-size", type=int)
@@ -220,7 +221,8 @@ def main():
     args = parse_args()
     try:
         overrides = {"model": args.model, "chunk_size": args.chunk_size, "overlap": args.overlap,
-                     "retriever_backend": args.backend, "bm25_mode": args.bm25_mode, "top_k": args.top_k}
+                     "retriever_backend": args.backend, "bm25_mode": args.bm25_mode, "top_k": args.top_k,
+                     "adaqr_model_path": str(args.adaqr_model_path.resolve()) if args.adaqr_model_path else None}
         config = load_config(PROJECT_DIR, {k: v for k, v in overrides.items() if v is not None}, profile=args.dataset)
         if args.mode == "demo" and args.backend in {None, "bm25"}:
             config = offline_config(config)
@@ -233,6 +235,12 @@ def main():
         if (dataset_type == "qrecc") != uses_passages:
             raise ValueError("Evaluation schema and corpus format do not match")
         strategies = list(dict.fromkeys(args.strategies))
+        adaqr_identity = None
+        if "adaqr" in strategies:
+            if args.mode != "ollama" or not config.get("adaqr_model_path"):
+                raise ValueError("AdaQR requires --mode ollama and --adaqr-model-path")
+            from rag.adaqr_model import adapter_identity
+            adaqr_identity = adapter_identity(config["adaqr_model_path"])
         output = args.output_dir or PROJECT_DIR / "outputs" / "runs" / datetime.now().astimezone().strftime("%Y%m%d_%H%M%S_%f")
         # Resolve the actual installed weights before validating a checkpoint;
         # the same mutable Ollama model tag can later identify different bytes.
@@ -242,7 +250,7 @@ def main():
             config["embedding_digest"] = embedding_identity["digest"]
         identity = {"task": "retrieval", "dataset": args.dataset, "data_sha256": file_sha256(data_path),
                     "corpus": corpus_fingerprint(corpus_path), "config": config, "mode": args.mode,
-                    "runtime_model_identity": model_identity,
+                    "runtime_model_identity": model_identity, "adaqr_adapter_identity": adaqr_identity,
                     "runtime_embedding_identity": embedding_identity,
                     "split": args.split, "strategies": strategies, "generate": args.generate,
                     "sample_ids": [row["id"] for row in examples], "code": code_hashes(PROJECT_DIR)}
@@ -258,7 +266,7 @@ def main():
             "dataset_type": dataset_type, "sample_count_per_strategy": len(examples), "split": args.split,
             "mode": args.mode, "generate": args.generate, "limit": args.limit, "config": config,
             "run_signature": cache.signature, "initialization_ms": initialization_ms,
-            "runtime_model_identity": model_identity,
+            "runtime_model_identity": model_identity, "adaqr_adapter_identity": adaqr_identity,
             "runtime_embedding_identity": embedding_identity,
             "metric_definition": ("QReCC: original passage IDs; Hit@K is any positive, gold_recall@K is fraction of unique indexed positives, MRR uses original first-positive rank, nDCG uses binary unique positives."
                 if uses_passages else "Single gold source-document hit in top K chunks; MRR uses original chunk ranks. recall_at_k is this single-gold hit."),

@@ -17,6 +17,7 @@ from .run_cache import make_signature
 
 AB_STRATEGIES = ("rewrite", "structured")
 STRATEGIES = ("current", "history", *AB_STRATEGIES)
+ALL_STRATEGIES = (*STRATEGIES, "adaqr")
 PROMPT_VERSION = "shared-role-history-preserve-language-v1"
 REFERENCE_EN = re.compile(r"\b(?:it|its|they|them|their|he|him|his|she|her|this|that|these|those|there)\b", re.I)
 REFERENCE_ZH = re.compile(r"它|他们|她们|它们|那里|这个|那个|上述|该馆|该校|这些|那些|那边|其|他|她")
@@ -197,7 +198,7 @@ def verified_referent(value: Any, history: list[dict]) -> str | None:
 def build_query(question: str, history: list[dict], strategy: str, *, client,
                 mode: str = "demo", config: dict | None = None) -> dict:
     """Return one query; the caller retrieves or generates an answer."""
-    if strategy not in STRATEGIES:
+    if strategy not in ALL_STRATEGIES:
         raise ValueError(f"未知 Query 策略：{strategy}")
     if mode not in {"demo", "ollama"}:
         raise ValueError("mode 必须为 demo 或 ollama")
@@ -216,6 +217,18 @@ def build_query(question: str, history: list[dict], strategy: str, *, client,
     def result(query: str, source: str, error: str | None = None):
         return {"query": query, "source": source, "error": error, "trace": trace}
 
+    if strategy == "adaqr":
+        if mode != "ollama":
+            raise ValueError("AdaQR requires a trained adapter and real model mode")
+        adapter = (config or {}).get("adaqr_model_path")
+        if not isinstance(adapter, str) or not adapter.strip():
+            raise ValueError("AdaQR requires adaqr_model_path / --adaqr-model-path")
+        if not history:
+            return result(question, "adaqr_first_turn")
+        from .adaqr_model import rewrite_with_adapter
+        query = rewrite_with_adapter(question, history, adapter)
+        trace["adapter_path"] = adapter
+        return result(query, "adaqr_dpo")
     if strategy == "current":
         return result(question, "none")
     if strategy == "history":

@@ -9,7 +9,7 @@ from typing import Callable
 from .config import load_config
 from .llm import EMBEDDING_INPUT_POLICY, OllamaClient, OllamaError, runtime_embedding_identity
 from .retrieval import Retriever
-from .rewriters import STRATEGIES, build_query, heuristic_rewrite
+from .rewriters import ALL_STRATEGIES, STRATEGIES, build_query, heuristic_rewrite
 
 
 HistorySelector = Callable[[str, tuple[dict[str, str], ...]], list[int]]
@@ -97,8 +97,8 @@ class RAGEngine:
             raise ValueError("问题不能为空")
         if len(question) > 2000:
             raise ValueError("问题最多2000字符")
-        if strategy not in STRATEGIES:
-            raise ValueError(f"strategy 必须为 {', '.join(STRATEGIES)}")
+        if strategy not in ALL_STRATEGIES:
+            raise ValueError(f"strategy 必须为 {', '.join(ALL_STRATEGIES)}")
         question = question.strip()
         messages = clean_history(history, self.config["history_turns"])
         started = time.perf_counter()
@@ -132,8 +132,8 @@ class RAGEngine:
             raise ValueError("问题不能为空")
         if len(question) > 2000:
             raise ValueError("问题最多2000字符")
-        if strategy not in STRATEGIES:
-            raise ValueError(f"strategy 必须为 {', '.join(STRATEGIES)}")
+        if strategy not in ALL_STRATEGIES:
+            raise ValueError(f"strategy 必须为 {', '.join(ALL_STRATEGIES)}")
         count = self.config["top_k"] if top_k is None else top_k
         if type(count) is not int or not 1 <= count <= 20:
             raise ValueError("top_k 必须为1到20的整数")
