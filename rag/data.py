@@ -97,7 +97,7 @@ def load_examples(path: Path, split: str = "all", limit: int | None = None,
             if prior_split != item["split"]:
                 raise ValueError(f"Conversation {cid} crosses data splits")
             positives = item["positive_ids"]
-            if (not isinstance(positives, list) or not positives
+            if (not isinstance(positives, list)
                     or any(not isinstance(pid, str) or not pid for pid in positives)
                     or len(set(positives)) != len(positives)):
                 raise ValueError(f"Sample {identifier}: positive_ids must be unique nonempty strings")

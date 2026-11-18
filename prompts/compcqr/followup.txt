@@ -1,0 +1,10 @@
+Generate a follow-up query and its answer based on the previous query and answer.
+The follow-up query should be highly relevant to the topic and context of the conversation.
+(Closely related so that both questions are likely to be answered by a passage.)
+If no follow-up is needed, return an empty string.
+Please format your output exactly as follows:
+"followup_query": "Your highly related query here",
+"next_answer": "Your corresponding answer here"
+
+Context: {history}
+Current Query: {question}

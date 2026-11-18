@@ -1,85 +1,263 @@
-"""CompCQR query composition, retrieval consensus and passage selection.
+"""CompCQR adaptation: atomic components -> queries -> RRF -> best passage.
 
-Uses the Baseline retriever and Ollama client; no second index or retrieval path.
+The paper's three-call algorithm is adapted to the project's Ollama client and
+BM25/dense/hybrid retrievers. Generated answers are hypothetical query expansion,
+never reference evidence. All functions accept only public conversational inputs.
 """
+from __future__ import annotations
+
+import itertools
 import json
-from collections import defaultdict
+import math
+import re
+import time
 
-from .compcqr_prompts import (
-    FOLLOWUP_SYSTEM_PROMPT, SYSTEM_ASSISTANT, SYSTEM_SELECTOR,
-    build_followup_prompt, build_rewrite_prompt, build_selection_prompt,
-    load_demonstrations, parse_rewrite_outputs, parse_selected_passage, repair_json,
-)
-from .compcqr_variations import build_variations
-
-COMPONENTS = ("oq", "mq", "ma", "mq2", "ma2")
+from .rewriters import clean_query, heuristic_rewrite, parse_json_object, validation_issues
+from .run_cache import make_signature
 
 
-def retrieve(engine, question, history, top_k):
-    """Run the paper's three LLM calls and 325 ordered retrieval variations."""
-    if engine.mode != "ollama":
-        raise ValueError("CompCQR 需要 Ollama 模式")
-    context = "\n".join(f"{m['role']}: {m['content']}" for m in history)
-    demo_path = engine.root / "prompts" / "demonstrations.json"
-    if not demo_path.is_file():
-        raise FileNotFoundError(f"CompCQR few-shot demonstrations 缺失: {demo_path}")
-    demo = load_demonstrations(demo_path)
-    # 第一次调用 LLM
-    rewrite_raw = engine.client.generate(
-        build_rewrite_prompt(f"Context: {context}\nCurrent Question: {question}", demo),
-        system=SYSTEM_ASSISTANT, temperature=0.7)
-    rewrites, responses, _ = parse_rewrite_outputs([rewrite_raw])
-    if not rewrites[0] or not responses[0]:
-        raise ValueError(f"CompCQR Step 0 输出无法解析: {rewrite_raw[:300]}")
-    # 第二次调用 LLM
-    followup_raw = engine.client.generate(
-        build_followup_prompt(context, question),
-        system=FOLLOWUP_SYSTEM_PROMPT, temperature=0.7)
-    try:
-        followup = json.loads(repair_json(followup_raw))
-        mq2, ma2 = followup["followup_query"], followup["next_answer"]
-        if not isinstance(mq2, str) or not isinstance(ma2, str):
-            raise TypeError("follow-up fields must be strings")
-    except (ValueError, KeyError, TypeError) as exc:
-        raise ValueError(f"CompCQR Step 1 输出无法解析: {followup_raw[:300]}") from exc
-    # 构造 325 种查询组合
-    parts = {"oq": question, "mq": rewrites[0], "ma": responses[0],
-             "mq2": mq2, "ma2": ma2}
-    variations = build_variations(parts, COMPONENTS, 5, "+")
-    # 执行 325 次检索
-    ranks = defaultdict(list)
-    documents = {}
-    searched = 0
-    for variation in variations:
-        query = variation["text"]
-        if not query.strip("+ "):
-            continue  # The paper permits an empty follow-up when none is relevant.
-        searched += 1
-        hits = engine.retriever.search(query, 100)
-        for rank, hit in enumerate(hits, 1):
-            key = hit["id"]
-            ranks[key].append(rank)
-            documents[key] = hit
-    if not ranks:
-        raise ValueError("CompCQR Step 3 未检索到候选文档")
-    # RRF 融合排序
-    scores = {key: sum(1 / rank for rank in positions)
-              for key, positions in ranks.items()}
-    ordered = sorted(scores, key=lambda key: (-scores[key], key))
-    candidates = ordered[:top_k]
-    # 第三次调用 LLM
-    selection_raw = engine.client.generate(
-        build_selection_prompt(question, context,
-                               [documents[key]["text"] for key in candidates], len(candidates)),
-        system=SYSTEM_SELECTOR, temperature=0.7)
-    selected = parse_selected_passage(selection_raw, 1, len(candidates))
-    if selected is None:
-        raise ValueError(f"CompCQR Step 5 选段无法解析: {selection_raw[:300]}")
-    chosen = candidates[selected - 1]
-    final_keys = [chosen] + [key for key in ordered if key != chosen][:top_k - 1]
-    hits = [{**documents[key], "score": round(scores[key], 8)} for key in final_keys]
-    return hits, {"components": parts, "variation_count": len(variations),
-                  "searched_variation_count": searched,
-                  "candidate_count": len(scores), "selected_passage_id": documents[chosen].get("passage_id"),
-                  "selected_chunk_id": chosen, "selected_number": selected,
-                  "selection_raw": selection_raw}
+from .compcqr_prompts import original_rewrite_prompt, followup_prompt, selection_prompt, parse_rar
+
+PROMPT_VERSION = "compcqr-paper-J-llm4cs-rar-cot-v2"
+COMPONENT_NAMES = ("oq", "mq", "ma", "mq2", "ma2")
+
+
+def compose_queries(components: dict, backend: str = "hybrid", max_components: int = 5) -> list[str]:
+    """Enumerate stable unique nonempty sequences; BM25 ignores component order."""
+    if backend not in {"bm25", "dense", "hybrid"}:
+        raise ValueError("Unknown CompCQR retriever backend")
+    if type(max_components) is not int or not 1 <= max_components <= 5:
+        raise ValueError("compcqr_max_components must be between 1 and 5")
+    atoms = list(dict.fromkeys(components.get(name, "").strip()
+                              for name in COMPONENT_NAMES if components.get(name, "").strip()))
+    combinations = itertools.combinations if backend == "bm25" else itertools.permutations
+    queries, seen = [], set()
+    for size in range(1, min(max_components, len(atoms)) + 1):
+        for values in combinations(atoms, size):
+            query = "\n".join(values)
+            if query not in seen:
+                seen.add(query)
+                queries.append(query)
+    return queries
+
+
+def _answer(value, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Component answer must be a string")
+    value = " ".join(value.split())
+    if not value and not allow_empty:
+        raise ValueError("Component answer is empty")
+    return value
+
+
+def parse_followup_response(raw: str) -> tuple[dict, bool]:
+    """Read original J.2 fields; tolerate only missing separators, never invent text."""
+    if not isinstance(raw, str):
+        raise ValueError("Follow-up output must be text")
+    text = raw.strip()
+    if text in {"", '""'}:
+        return {"followup_query": "", "next_answer": ""}, False
+    obj = parse_json_object(text) or parse_json_object("{" + text + "}")
+    if obj is not None:
+        if not {"followup_query", "next_answer"} <= obj.keys():
+            raise ValueError("Both original follow-up fields are required")
+        return obj, False
+    # Some small models emit the paper's quoted fields on adjacent lines but
+    # omit their comma. Decode each existing JSON string without changing it.
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.I).strip()
+    if text.startswith("{") and text.endswith("}"):
+        text = text[1:-1].strip()
+    decoder, values = json.JSONDecoder(), {}
+    while text:
+        key, end = decoder.raw_decode(text)
+        if key not in {"followup_query", "next_answer"} or key in values:
+            raise ValueError("Unexpected or duplicate follow-up field")
+        text = text[end:].lstrip()
+        if not text.startswith(":"):
+            raise ValueError("Missing follow-up field colon")
+        value, end = decoder.raw_decode(text[1:].lstrip())
+        if not isinstance(value, str):
+            raise ValueError("Follow-up values must be JSON strings")
+        values[key] = value
+        text = text[1:].lstrip()[end:].lstrip()
+        if text.startswith(","):
+            text = text[1:].lstrip()
+    if set(values) != {"followup_query", "next_answer"}:
+        raise ValueError("Both original follow-up fields are required")
+    return values, True
+
+
+def build_plan(question: str, history: list[dict], *, client, mode: str, config: dict | None = None) -> dict:
+    """Generate components with two calls; failures remain explicit in source/trace."""
+    config = config or {}
+    components = dict.fromkeys(COMPONENT_NAMES, "")
+    components["oq"] = question
+    trace = {"strategy": "compcqr", "prompt_version": PROMPT_VERSION,
+             "history_signature": make_signature(history), "visible_history_messages": len(history),
+             "llm_calls": 0, "raw_responses": [], "fallback": False, "repaired": False,
+             "component_errors": [], "stage_errors": [], "selection_error": None,
+             "validation_policy": "heuristic rewrite checks only; generated answers are unverified",
+             "adaptation": "Ollama + project retriever; not the original ANCE benchmark setting"}
+    source, error = "compcqr_llm", None
+
+    def call(prompt):
+        trace["llm_calls"] += 1
+        raw = client.generate(prompt, system="", temperature=0.0)
+        trace["raw_responses"].append(raw)
+        return raw
+
+    def failure(stage, exception):
+        message = f"{stage}: {type(exception).__name__}: {exception}"
+        trace["component_errors"].append(message)
+        trace["stage_errors"].append({"stage": stage, "error": message})
+        trace["fallback"] = True
+        return message
+
+    if mode == "demo":
+        components["mq"] = heuristic_rewrite(question, history)
+        source = "compcqr_demo"
+        trace["demo_note"] = "No LLM called; no hypothetical answers or LLM selection. Not a CompCQR model result."
+    else:
+        public_input = {"history": history, "current_question": question}
+        try:
+            cot, original_rewrite, original_answer = parse_rar(call(original_rewrite_prompt(question, history)))
+            trace["rewrite_analysis"] = cot
+            rewrite = clean_query(original_rewrite)
+            issues = validation_issues(rewrite, question, history)
+            trace["validation_issues"] = issues
+            if issues:
+                raise ValueError(", ".join(issues))
+            answer = _answer(original_answer)
+            components.update(mq=rewrite, ma=answer)
+        except Exception as exc:
+            error = failure("rewrite_answer", exc)
+            components["mq"] = heuristic_rewrite(question, history)
+            source = "compcqr_fallback"
+        if not error:
+            try:
+                raw = call(followup_prompt(question, history))
+                obj, format_repaired = parse_followup_response(raw)
+                trace["followup_format_repaired"] = format_repaired
+                proposed = obj.get("followup_query", obj.get("mq2"))
+                query = clean_query(proposed)
+                answer = _answer(obj.get("next_answer", obj.get("ma2")), allow_empty=True)
+                if not isinstance(proposed, str) or (proposed.strip() and not query):
+                    raise ValueError("Invalid follow-up query")
+                if len(query) > 1200 or bool(query) != bool(answer):
+                    raise ValueError("Follow-up query and answer must be a valid nonempty pair or both empty")
+                components.update(mq2=query, ma2=answer)
+            except Exception as exc:
+                error = failure("followup", exc)
+                source = "compcqr_partial"
+    queries = compose_queries(components, config.get("retriever_backend", "hybrid"),
+                              config.get("compcqr_max_components", 5))
+    trace.update(components=components, query_count=len(queries), queries=queries,
+                 composition_mode="subsets" if config.get("retriever_backend", "hybrid") == "bm25" else "ordered_permutations",
+                 max_components=config.get("compcqr_max_components", 5),
+                 nonempty_components=sum(bool(value) for value in components.values()),
+                 hypothetical_answers_are_evidence=False)
+    return {"query": components["mq"] or question, "queries": queries, "components": components,
+            "source": source, "error": error, "trace": trace}
+
+
+def _passage_key(hit: dict) -> str:
+    value = hit.get("passage_id") or hit.get("id")
+    if not isinstance(value, str) or not value:
+        raise ValueError("CompCQR fusion requires passage_id or id")
+    return value
+
+
+def fuse_rankings(rankings: list[list[dict]], rrf_k: float = 0) -> list[dict]:
+    """Aggregate unique passages per query, preserving raw ranks and deterministic ties."""
+    if (type(rrf_k) not in {int, float} or not math.isfinite(rrf_k) or rrf_k < 0):
+        raise ValueError("CompCQR RRF constant must be a finite nonnegative number")
+    scores, frequencies, originals = {}, {}, {}
+    for ranking in rankings:
+        seen = set()
+        for rank, hit in enumerate(ranking, 1):
+            key = _passage_key(hit)
+            if key in seen:
+                continue
+            seen.add(key)
+            originals.setdefault(key, hit)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
+            frequencies[key] = frequencies.get(key, 0) + 1
+    order = sorted(scores, key=lambda key: (-scores[key], -frequencies[key], key))
+    return [{**originals[key], "score": scores[key], "rrf_score": scores[key],
+             "query_frequency": frequencies[key], "pre_selection_rank": rank}
+            for rank, key in enumerate(order, 1)]
+
+
+def _selection_prompt(question: str, history: list[dict], passages: list[dict]) -> str:
+    return selection_prompt(question, history, passages)
+
+
+def _selection_passages(hits: list[dict], config: dict, question: str, history: list[dict]) -> list[dict]:
+    """Budget the complete prompt, preserving the same question and history window."""
+    passages = []
+    budget = config.get("compcqr_selection_char_budget", 6000)
+    for hit in hits[:config.get("compcqr_selection_top_k", 5)]:
+        item = {"number": len(passages) + 1, "passage_id": _passage_key(hit),
+                "text": str(hit.get("text", ""))[:config.get("compcqr_passage_chars", 700)]}
+        if len(_selection_prompt(question, history, [*passages, item])) > budget:
+            break
+        passages.append(item)
+    return passages
+
+
+def retrieve_plan(question: str, history: list[dict], queries: list[str], *, retriever,
+                  client, mode: str, config: dict, trace: dict) -> dict:
+    """Execute all queries, fuse by passage, then promote one valid LLM choice."""
+    trace = {**trace, "stage_errors": list(trace.get("stage_errors", [])),
+             "raw_responses": list(trace.get("raw_responses", []))}
+    started = time.perf_counter()
+    rankings = retriever.search_many(queries, config.get("compcqr_retrieval_depth", 100))
+    retrieved = time.perf_counter()
+    hits = fuse_rankings(rankings, config.get("compcqr_rrf_k", 0))[:config.get("compcqr_retrieval_depth", 100)]
+    fused = time.perf_counter()
+    trace.update(query_count=len(queries), retrieved_lists=len(rankings),
+                 fused_passage_count=len(hits), selection_error=None, selected_passage_id=None,
+                 cross_query_rrf_k=config.get("compcqr_rrf_k", 0),
+                 selection_applied=False, selection_candidate_count=0)
+    candidates = _selection_passages(hits, config, question, history)
+    trace["selection_candidate_count"] = len(candidates)
+    trace["selection_candidates"] = candidates
+    if mode == "demo":
+        trace["selection_skipped"] = "demo_no_llm"
+    elif not config.get("compcqr_select", True):
+        trace["selection_skipped"] = "disabled_by_config"
+    elif not candidates:
+        trace["selection_skipped"] = "no_candidates_within_budget" if hits else "no_retrieved_passages"
+        if hits:
+            message = "Complete selector prompt and one passage exceed compcqr_selection_char_budget"
+            trace.update(selection_error=message, fallback=True)
+            trace["stage_errors"].append({"stage": "selection", "error": message})
+    else:
+        try:
+            prompt = _selection_prompt(question, history, candidates)
+            trace["selection_prompt_characters"] = len(prompt)
+            trace["llm_calls"] = trace.get("llm_calls", 0) + 1
+            raw = client.generate(prompt, system="",
+                                  temperature=0.0)
+            trace["raw_responses"].append(raw)
+            obj = parse_json_object(raw) or {}
+            number = obj.get("selected_passage_number")
+            if isinstance(number, str) and re.fullmatch(r"[1-9][0-9]*", number.strip()):
+                number = int(number.strip())
+            if type(number) is not int or not 1 <= number <= len(candidates):
+                raise ValueError("Selection must be a supplied passage number")
+            chosen = hits[number - 1]
+            hits = [chosen, *hits[:number - 1], *hits[number:]]
+            trace.update(selected_passage_id=_passage_key(chosen), selection_applied=True,
+                         selection_reason=str(obj.get("reason for selection", "")),
+                         query_analysis=obj.get("query analysis"), passage_analysis=obj.get("passage analysis"))
+        except Exception as exc:
+            message = f"{type(exc).__name__}: {exc}"
+            trace.update(selection_error=message, fallback=True)
+            trace["stage_errors"].append({"stage": "selection", "error": message})
+            trace["selection_skipped"] = "invalid_or_failed_selection_keep_rrf"
+    finished = time.perf_counter()
+    return {"hits": hits, "trace": trace,
+            "latencies_ms": {"retrieval": round((retrieved - started) * 1000, 2),
+                             "fusion": round((fused - retrieved) * 1000, 2),
+                             "selection": round((finished - fused) * 1000, 2)}}

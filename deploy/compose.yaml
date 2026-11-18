@@ -1,0 +1,27 @@
+# Launch on the remote server, not on the Windows VS Code client.
+# Configure vm.max_map_count=262144 on Linux and choose a data volume with ample SSD space.
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.19.3
+    environment:
+      discovery.type: single-node
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: "${OPENSEARCH_JAVA_OPTS:--Xms8g -Xmx8g}"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - "${OPENSEARCH_DATA_DIR:-./opensearch-data}:/usr/share/opensearch/data"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10

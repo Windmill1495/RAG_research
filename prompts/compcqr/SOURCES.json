@@ -1,0 +1,8 @@
+{
+  "LLM4CS_commit": "a292fb88e5b9898af3e5b000ca9a2c3d2c2ea99e",
+  "CompCQR_commit": "04c9882ee9ccf17a31670dd406e3b666b48b896d",
+  "rewrite": "https://github.com/kyriemao/LLM4CS/blob/a292fb88e5b9898af3e5b000ca9a2c3d2c2ea99e/chat_promptor.py#L94",
+  "followup": "CompCQR.pdf Appendix J.2, line-wrap normalization and placeholder binding only",
+  "selection": "CompCQR.pdf Appendix J.3, line-wrap normalization and placeholder binding only",
+  "demonstrations_sha256": "accd47e2285eaf349fc07dbd142ae160f04eab32201b6fdef86b8d03603cae80"
+}

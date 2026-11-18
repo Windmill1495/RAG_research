@@ -1,0 +1,22 @@
+You are an expert in question answering.
+Your task is to select the most relevant passage from the given passages based on the query.
+I will provide you with {TOP_K} passages, each with a passage number.
+
+Select the passage based on their relevance to the search query: {question}.
+Dialogue History: {formatted_context}
+Search Query: {oq}
+Passages:
+{passage_text}
+
+Please follow the steps below:
+Step 1: List up the information required to answer the search query and rewrite the query into a standalone and de-contextualized query.
+Step 2: Analyze whether each passage has the information required to answer the search query.
+Step 3: Choose the passage that mostly covers clear and diverse information to answer the query.
+
+The format of the final output should be as follows:
+{
+"query analysis": "<step 1 output, your analysis of the query and the rewritten query>",
+"passage analysis": "<step 2 output, analysis>",
+"reason for selection": "<step 3 output, reason for selecting the passage>",
+"selected_passage_number": "<the number of the selected passage, chosen from 1 to {TOP_K}>"
+}

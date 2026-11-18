@@ -9,10 +9,10 @@
   <aside>
     <div class="brand"><span class="logo">R</span><div>RAG Research<small>QReCC · 英语公开语料</small></div></div>
     <p class="intro">从问题到证据，观察一次 RAG 问答的完整路径。</p>
-    <a class="lab-link" href="/rewrite">进入问题重写 A/B 实验 ↗</a>
+    <a class="lab-link" href="/rewrite">进入问题重写 A/B/C 实验 ↗</a>
     <label for="mode">回答模式</label><select id="mode"><option value="demo">离线 · 证据摘录</option><option value="ollama">Qwen · 大模型回答</option></select>
     <p id="modeHint" class="hint"></p>
-    <label for="strategy">Query 构造策略</label><select id="strategy"><option value="current">① 仅当前问题</option><option value="history">② 历史直接拼接</option><option value="rewrite" selected>③ 直接重写</option><option value="structured">④ 结构化重写</option></select>
+    <label for="strategy">Query 构造策略</label><select id="strategy"><option value="current">① 仅当前问题</option><option value="history">② 历史直接拼接</option><option value="rewrite" selected>③ 直接重写</option><option value="structured">④ 结构化重写</option><option value="compcqr">⑤ C · CompCQR 组合查询</option></select>
     <p class="hint">切换策略后，可重新询问同一个追问，观察检索变化。离线重写使用规则；Qwen 模式调用大模型。</p>
     <label for="topK">Top-K 检索块数</label><input id="topK" type="number" min="1" max="20" value="5">
     <div class="index-box"><strong>知识库索引</strong><p id="indexInfo">正在读取…</p><button id="rebuild" class="secondary">重建索引</button></div>

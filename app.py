@@ -5,21 +5,26 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
 from evaluate_rewrite import evaluate_rewrites
-from rag.config import load_config, offline_config
+from rag.config import load_config, offline_config, load_experiment_config, validate_experiment_data
 from rag.llm import OllamaClient, OllamaError, runtime_model_identity
 from rag.pipeline import RAGEngine, clean_history
 from rag.rewrite_data import load_rewrite_examples
-from rag.rewriters import AB_STRATEGIES
+from rag.rewriters import AB_STRATEGIES, RESEARCH_STRATEGIES
 
 ROOT = Path(__file__).resolve().parent
 
 
 def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc", *,
-                  rewrite_model: str | None = None, initial_page: str = "rag") -> ThreadingHTTPServer:
-    config = load_config(ROOT, profile=dataset)
+                  rewrite_model: str | None = None, initial_page: str = "rag",
+                  scope: str = "pilot", config_path: Path | str | None = None) -> ThreadingHTTPServer:
+    config = load_experiment_config(ROOT, scope=scope, config_path=config_path)
+    if scope == "full" and requested_mode == "demo":
+        raise ValueError("Full web mode requires a complete BM25 index and Ollama generation; use --scope pilot --mode demo for offline preview")
+    if scope == "full":
+        validate_experiment_data(config, ROOT / config["eval_path"])
     probe = OllamaClient(config["base_url"], config["model"], config["embedding_model"], timeout=2)
     models, connection_error = [], ""
     try:
@@ -29,7 +34,15 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
     def missing_models(settings, installed):
         required = [settings["model"]]
         if settings["retriever_backend"] != "bm25":
-            required.append(settings["embedding_model"])
+            if settings.get("embedding_base_url") and settings["embedding_base_url"] != settings["base_url"]:
+                try:
+                    tags = OllamaClient(settings["embedding_base_url"], settings["model"], settings["embedding_model"], timeout=2).list_models()
+                except OllamaError:
+                    tags = []
+                if settings["embedding_model"] not in tags and settings["embedding_model"] + ":latest" not in tags:
+                    return [settings["embedding_model"]]
+            else:
+                required.append(settings["embedding_model"])
         return [tag for tag in required if tag not in installed and tag + ":latest" not in installed]
 
     missing = missing_models(config, models)
@@ -37,6 +50,8 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
     if missing and not connection_error:
         connection_error = "缺少模型：" + "、".join(missing)
     default_mode = ("ollama" if available else "demo") if requested_mode == "auto" else requested_mode
+    if scope == "full" and default_mode == "demo":
+        raise ValueError("完整模式的模型不可用，请检查 Ollama 地址和模型；不会自动退成307题离线演示")
     engines, operation_lock = {}, threading.RLock()
     initialization, initialization_lock = {}, threading.Lock()
     rewrite_engine, rewrite_lock = None, threading.Lock()
@@ -45,6 +60,8 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
         with operation_lock:
             if mode not in {"demo", "ollama"}:
                 raise ValueError("mode 必须为 demo 或 ollama")
+            if scope == "full" and mode != "ollama":
+                raise ValueError("完整网页不能切换为 demo；离线预览请显式 --scope pilot")
             if mode not in engines:
                 settings = offline_config(config) if mode == "demo" else config
                 with initialization_lock:
@@ -61,7 +78,7 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
             return engines[mode]
 
     def prepare_engine(mode):
-        # Binding the HTTP port must not wait for the first embedding index.
+        # Bind the HTTP port before loading the configured retrieval corpus.
         with initialization_lock:
             if mode in engines or initialization.get(mode, {}).get("state") in {"building", "error"}:
                 return
@@ -80,7 +97,7 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
         nonlocal rewrite_engine
         with rewrite_lock:
             if rewrite_engine is None:
-                rewrite_config = load_config(ROOT, {"model": rewrite_model}, profile="qrecc")
+                rewrite_config = load_experiment_config(ROOT, {"model": rewrite_model}, scope=scope, config_path=config_path)
                 mode = requested_mode
                 if mode == "auto":
                     rewrite_models = models
@@ -93,12 +110,18 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
                             rewrite_models = []
                     mode = "demo" if missing_models(rewrite_config, rewrite_models) else "ollama"
                 if mode == "demo":
+                    if scope == "full":
+                        raise ValueError("完整重写页的模型不可用，请检查模型服务")
                     rewrite_config = offline_config(rewrite_config)
                 rewrite_engine = RAGEngine(ROOT, rewrite_config, mode, build_index=False)
             return rewrite_engine
 
+    examples_cache = None
     def rewrite_examples(engine):
-        return load_rewrite_examples(ROOT / engine.config["eval_path"], "all")
+        nonlocal examples_cache
+        if examples_cache is None:
+            examples_cache = load_rewrite_examples(ROOT / engine.config["eval_path"], "all")
+        return examples_cache
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -141,9 +164,9 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
                     settings = offline_config(config) if default_mode == "demo" else config
                     self.json_response({
                         "mode": default_mode, "model": config["model"], "models": models,
-                        "dataset": config["dataset"],
+                        "dataset": config["dataset"], "scope": scope,
                         "ollama_available": available, "connection_error": connection_error,
-                        "config": {key: settings[key] for key in ("dataset", "corpus_format", "bm25_mode", "retriever_backend", "chunk_size", "overlap", "top_k", "context_char_budget", "history_turns")},
+                        "config": {key: settings[key] for key in ("dataset", "corpus_format", "bm25_mode", "retriever_backend", "hybrid_candidate_depth", "chunk_size", "overlap", "top_k", "context_char_budget", "history_turns")},
                         "initialization": state,
                         "index": engine.retriever.stats() if engine else {"built": False},
                     })
@@ -153,16 +176,30 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
             if path == "/api/rewrite/samples":
                 try:
                     engine = get_rewrite_engine()
+                    candidates = rewrite_examples(engine)
+                    params = parse_qs(urlsplit(self.path).query)
+                    selected_split = params.get("split", ["test" if scope == "full" else "all"])[0]
+                    if selected_split not in {"train", "dev", "test", "all"}:
+                        raise ValueError("无效split")
+                    candidates = [r for r in candidates if selected_split == "all" or r["split"] == selected_split]
+                    offset = max(0, int(params.get("offset", ["0"])[0]))
+                    limit = min(200, max(1, int(params.get("limit", ["100" if scope == "full" else "200"])[0])))
+                    if scope == "pilot" and not params:
+                        limit = len(candidates)
+                    page = candidates[offset:offset + limit]
                     samples = [
                         {"id": row["id"], "source": row["source"], "turn": row["turn"], "split": row["split"],
                          "question": row["question"],
                          "history": clean_history(row["history"], engine.config["history_turns"])}
-                        for row in rewrite_examples(engine)
+                        for row in page
                     ]
                     self.json_response({"samples": samples, "mode": engine.mode,
+                                        "scope": scope, "split": selected_split, "total": len(candidates),
+                                        "offset": offset, "limit": limit, "has_next": offset + len(page) < len(candidates),
                                         "model": engine.config["model"],
                                         "retriever_backend": engine.config["retriever_backend"] if engine.mode == "ollama" else None,
-                                        "history_turns": engine.config["history_turns"]})
+                                        "history_turns": engine.config["history_turns"],
+                                        "strategies": list(RESEARCH_STRATEGIES)})
                 except (OSError, ValueError) as error:
                     self.json_response({"error": str(error)}, 503)
                 return
@@ -200,6 +237,8 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
                     return
                 with operation_lock:
                     if self.path == "/api/rebuild":
+                        if scope == "full":
+                            raise ValueError("全量索引由 build_full_index.py 单独构建，网页只读取已完成索引")
                         engine = get_engine(default_mode)
                         result = engine.retriever.build(force=True)
                         engines.clear()
@@ -218,6 +257,13 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
             sample_id = body.get("sample_id")
             if not isinstance(sample_id, str) or not sample_id:
                 raise ValueError("sample_id 必须为非空字符串")
+            # Old API callers retain their A/B contract; the current page requests A/B/C.
+            strategies = body.get("strategies", list(AB_STRATEGIES))
+            if (not isinstance(strategies, list) or not strategies
+                    or any(not isinstance(value, str) or value not in RESEARCH_STRATEGIES
+                           for value in strategies)
+                    or len(strategies) != len(set(strategies))):
+                raise ValueError("strategies 必须是不重复的 rewrite、structured、compcqr 列表")
             engine = get_rewrite_engine()
             sample = next((row for row in rewrite_examples(engine) if row["id"] == sample_id), None)
             if sample is None:
@@ -226,9 +272,14 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
             with rewrite_lock, operation_lock:
                 identity = runtime_model_identity(engine.config, engine.mode)
                 retrieval = {}
-                if engine.mode == "ollama" and sample.get("positive_ids"):
-                    retrieval = {"retrieval_ids": {sample_id}, "retriever": get_engine("ollama").retriever}
-                _, rows = evaluate_rewrites(engine, [sample], AB_STRATEGIES, progress=False, **retrieval)
+                if engine.mode == "ollama" and (scope == "full" or sample.get("positive_ids")):
+                    retriever = get_engine("ollama").retriever
+                    if scope == "full":
+                        wanted = set(sample["positive_ids"])
+                        if retriever.contains_passage_ids(wanted) != wanted:
+                            raise ValueError("该题有标注段落不在完整索引中，请检查索引来源和完整性")
+                    retrieval = {"retrieval_ids": {sample_id} if sample.get("positive_ids") else set(), "retriever": retriever}
+                _, rows = evaluate_rewrites(engine, [sample], strategies, progress=False, **retrieval)
             self.json_response({
                 "sample_id": sample_id, "mode": engine.mode,
                 "model": identity.get("name", engine.config["model"]),
@@ -246,22 +297,24 @@ def create_server(port: int, requested_mode: str = "auto", dataset: str = "qrecc
 
 def main():
     parser = argparse.ArgumentParser(description="本地多轮RAG演示页面")
-    parser.add_argument("--mode", choices=["auto", "demo", "ollama"], default="ollama")
+    parser.add_argument("--mode", choices=["auto", "demo", "ollama"], default="auto")
     parser.add_argument("--port", type=int, default=8001)
     parser.add_argument("--dataset", choices=["qrecc"], default="qrecc")
     parser.add_argument("--page", choices=["rag", "rewrite"], default="rag", help="浏览器打开的初始页面")
-    parser.add_argument("--rewrite-model", help="覆盖重写 A/B 页使用的 Ollama 模型")
+    parser.add_argument("--scope", choices=["full", "pilot"], default="full")
+    parser.add_argument("--config", type=Path, help="实验室机器配置JSON")
+    parser.add_argument("--rewrite-model", help="覆盖重写 A/B/C 页使用的 Ollama 模型")
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     try:
         server = create_server(args.port, args.mode, args.dataset, rewrite_model=args.rewrite_model,
-                               initial_page=args.page)
+                               initial_page=args.page, scope=args.scope, config_path=args.config)
     except Exception as error:
-        raise SystemExit(f"启动失败：{error}\n若端口被占用，可使用 --port 8001；dense/hybrid需要Ollama嵌入模型。")
+        raise SystemExit(f"启动失败：{error}\n若端口被占用，可使用 --port 8001。")
     url = f"http://127.0.0.1:{server.server_port}"
     if args.page == "rewrite":
         url += "/rewrite"
-    print(f"RAG Research 已启动：{url}；数据集={args.dataset}\n按 Ctrl+C 停止。默认 Ollama 模式执行 CompCQR。")
+    print(f"RAG Research 已启动：{url}；数据集={args.dataset}；范围={args.scope}\n按 Ctrl+C 停止。full 仅使用真实模型与已完成索引；pilot 支持离线预览。")
     if not args.no_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:
