@@ -24,7 +24,7 @@ from rag.metrics import NORMALIZATION, passage_metrics, rouge_scores
 from rag.llm import runtime_embedding_identity, runtime_model_identity
 from rag.pipeline import HistorySelector, RAGEngine
 from rag.rewrite_data import REWRITE_DATA_FORMATS, load_rewrite_examples
-from rag.rewriters import RESEARCH_STRATEGIES, STRATEGIES
+from rag.rewriters import ALL_STRATEGIES, RESEARCH_STRATEGIES
 from rag.run_cache import RunCache, code_hashes, file_sha256
 
 
@@ -249,9 +249,11 @@ def main():
     parser.add_argument("--scope", choices=["full", "pilot"], default="full")
     parser.add_argument("--config", type=Path, help="Machine-local settings")
     parser.add_argument("--trace-detail", choices=["summary", "full"], default=None)
-    parser.add_argument("--strategies", nargs="+", choices=(*STRATEGIES, *HISTORY_SELECTORS),
-                        default=RESEARCH_STRATEGIES, help="Defaults to A: rewrite, B: structured, C: compcqr")
+    parser.add_argument("--strategies", nargs="+", choices=(*ALL_STRATEGIES, *HISTORY_SELECTORS),
+                        default=RESEARCH_STRATEGIES,
+                        help="Defaults to A: rewrite, B: structured, C: compcqr")
     parser.add_argument("--model", help="Installed Ollama model tag, overriding config.json for this run")
+    parser.add_argument("--adaqr-model-path", type=Path, help="Trained AdaQR DPO adapter directory")
     parser.add_argument("--split", choices=["train", "dev", "test", "all"],
                         help="Full scope defaults to official test; pilot defaults to all configured questions")
     parser.add_argument("--data", type=Path)
@@ -276,6 +278,8 @@ def main():
     try:
         overrides = {"model": args.model.strip()} if args.model is not None else {}
         overrides.update(compcqr_overrides(args))
+        if args.adaqr_model_path:
+            overrides["adaqr_model_path"] = str(args.adaqr_model_path.expanduser().resolve())
         config = load_experiment_config(PROJECT_DIR, overrides, scope=args.scope, config_path=args.config)
         config["trace_detail"] = args.trace_detail or ("summary" if args.scope == "full" else "full")
         if args.scope == "full" and args.mode != "ollama":
@@ -307,11 +311,17 @@ def main():
             if embedding_identity is not None:
                 retrieval["embedding_model_identity"] = embedding_identity
         strategies = list(dict.fromkeys(args.strategies))
+        adaqr_identity = None
+        if "adaqr" in strategies:
+            if args.mode != "ollama" or not config.get("adaqr_model_path"):
+                raise ValueError("AdaQR requires --mode ollama and --adaqr-model-path")
+            from rag.adaqr_model import adapter_identity
+            adaqr_identity = adapter_identity(config["adaqr_model_path"])
         output = args.output_dir or PROJECT_DIR / "outputs" / "rewrite_runs" / datetime.now().astimezone().strftime("%Y%m%d_%H%M%S_%f")
         identity = {"task": "rewrite_quality", "dataset": "qrecc", "data_sha256": file_sha256(data_path),
                     "config": config, "mode": args.mode, "split": split, "strategies": strategies,
                     "data_format": data_format, "retrieval": retrieval, "prepared_dataset": prepared,
-                    "runtime_model_identity": model_identity,
+                    "runtime_model_identity": model_identity, "adaqr_adapter_identity": adaqr_identity,
                     "sample_ids": [row["id"] for row in examples], "code": code_hashes(PROJECT_DIR),
                     "normalization": NORMALIZATION, "rouge_l": args.rouge_l,
                     "review_count": args.review_count, "review_seed": args.review_seed}
@@ -329,7 +339,7 @@ def main():
                     "split_warning": "Includes training/development data; not independent test evaluation." if split == "all" else None,
                     "config": config, "run_signature": cache.signature, "normalization": NORMALIZATION,
                     "retrieval": retrieval, "initialization_ms": initialization_ms,
-                    "runtime_model_identity": model_identity,
+                    "runtime_model_identity": model_identity, "adaqr_adapter_identity": adaqr_identity,
                     "created_at": datetime.now().astimezone().isoformat(),
                     "metric_warning": "Macro lexical ROUGE with no stemming/stop-word removal; not semantic accuracy. Equivalent wording may be valid.",
                     "compcqr_policy": "CompCQR ROUGE and blind review score its base independent rewrite only. With --rewrite-only, no retrieval/fusion/selection is executed. Full mode otherwise executes the complete pipeline for every selected turn, and only annotated samples score its final ranking. Component and selection failures are separately counted." if "compcqr" in strategies else None,

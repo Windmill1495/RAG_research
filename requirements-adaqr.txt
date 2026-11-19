@@ -1,0 +1,6 @@
+# Install on a CUDA host with a matching PyTorch CUDA build.
+torch
+transformers
+peft
+bitsandbytes
+accelerate
