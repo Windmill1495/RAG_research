@@ -16,8 +16,8 @@ from .run_cache import make_signature
 
 
 AB_STRATEGIES = ("rewrite", "structured")
-STRATEGIES = ("current", "history", *AB_STRATEGIES)
-ALL_STRATEGIES = (*STRATEGIES, "adaqr")
+RESEARCH_STRATEGIES = (*AB_STRATEGIES, "compcqr")
+STRATEGIES = ("current", "history", *RESEARCH_STRATEGIES)
 PROMPT_VERSION = "shared-role-history-preserve-language-v1"
 REFERENCE_EN = re.compile(r"\b(?:it|its|they|them|their|he|him|his|she|her|this|that|these|those|there)\b", re.I)
 REFERENCE_ZH = re.compile(r"它|他们|她们|它们|那里|这个|那个|上述|该馆|该校|这些|那些|那边|其|他|她")
@@ -130,6 +130,16 @@ def _number_values(text: str) -> set[str]:
     """Compare common English number words and digits by value, not spelling."""
     values = {str(Decimal(value).normalize()) for value in NUMBERS.findall(text)}
     for match in NUMBER_WORDS.finditer(text):
+        # In vocational follow-ups such as "requirements to become one?",
+        # bare "one" refers to the profession; it is not a count of one.
+        # Keep cardinal one, compounds, and explicit how-many questions intact.
+        clause = text[:match.start()].rsplit('\n', 1)[-1]
+        if (match.group(0).lower() == 'one'
+                and re.search(r'\bto become\s+$', clause, re.I)
+                and re.search(r'\b(?:requirements?|qualifications?|required|need(?:ed)?|necessary|takes?)\b', clause, re.I)
+                and not re.search(r'\bhow\s+(?:many|much)\b', clause, re.I)
+                and re.match(r'\s*[?!.](?:\s|$)', text[match.end():])):
+            continue
         current, total = 0, 0
         for word in re.findall(r"[a-z]+", match.group(0).lower()):
             if word == "and":
@@ -198,7 +208,7 @@ def verified_referent(value: Any, history: list[dict]) -> str | None:
 def build_query(question: str, history: list[dict], strategy: str, *, client,
                 mode: str = "demo", config: dict | None = None) -> dict:
     """Return one query; the caller retrieves or generates an answer."""
-    if strategy not in ALL_STRATEGIES:
+    if strategy not in STRATEGIES:
         raise ValueError(f"未知 Query 策略：{strategy}")
     if mode not in {"demo", "ollama"}:
         raise ValueError("mode 必须为 demo 或 ollama")
@@ -209,6 +219,10 @@ def build_query(question: str, history: list[dict], strategy: str, *, client,
             or not isinstance(m.get("content"), str) for m in history):
         raise ValueError("history 必须使用明确的 user/assistant 角色；不能推测交替角色")
     question = question.strip()
+    if strategy == "compcqr":
+        # Local import avoids coupling the single-query A/B code to orchestration.
+        from .compcqr import build_plan
+        return build_plan(question, history, client=client, mode=mode, config=config)
     trace = {"strategy": strategy, "prompt_version": PROMPT_VERSION,
              "history_signature": make_signature(history), "visible_history_messages": len(history),
              "llm_calls": 0, "repaired": False, "fallback": False,
@@ -217,18 +231,6 @@ def build_query(question: str, history: list[dict], strategy: str, *, client,
     def result(query: str, source: str, error: str | None = None):
         return {"query": query, "source": source, "error": error, "trace": trace}
 
-    if strategy == "adaqr":
-        if mode != "ollama":
-            raise ValueError("AdaQR requires a trained adapter and real model mode")
-        adapter = (config or {}).get("adaqr_model_path")
-        if not isinstance(adapter, str) or not adapter.strip():
-            raise ValueError("AdaQR requires adaqr_model_path / --adaqr-model-path")
-        if not history:
-            return result(question, "adaqr_first_turn")
-        from .adaqr_model import rewrite_with_adapter
-        query = rewrite_with_adapter(question, history, adapter)
-        trace["adapter_path"] = adapter
-        return result(query, "adaqr_dpo")
     if strategy == "current":
         return result(question, "none")
     if strategy == "history":

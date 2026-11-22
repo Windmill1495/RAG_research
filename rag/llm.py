@@ -28,6 +28,11 @@ class OllamaError(RuntimeError):
     """An actionable connection, model, or response-format error."""
 
 
+def runtime_options(config):
+    return {name: config['ollama_' + name] for name in ('num_thread', 'num_gpu')
+            if config.get('ollama_' + name) is not None}
+
+
 def runtime_model_identity(config: dict, mode: str) -> dict:
     """Freeze the installed weight digest, not just a mutable Ollama tag.
 
@@ -42,15 +47,19 @@ def runtime_model_identity(config: dict, mode: str) -> dict:
     client = OllamaClient(config["base_url"], config["model"], config["embedding_model"], timeout=5)
     return {"mode": mode, "base_url": client.base_url, **_installed_identity(client, client.model),
             **client.thinking_option,
-            "generation_options": {"temperature": 0.0, "seed": 42, "num_ctx": 8192, "num_predict": 512}}
+            "generation_options": {"temperature": 0.0, "seed": 42,
+                                   "num_ctx": config.get("llm_num_ctx", 8192),
+                                   "num_predict": config.get("llm_num_predict", 512),
+                                   **runtime_options(config)}}
 
 
 def runtime_embedding_identity(config: dict) -> dict | None:
     if config["retriever_backend"] == "bm25":
         return None
-    client = OllamaClient(config["base_url"], config["model"], config["embedding_model"], timeout=5)
+    client = OllamaClient(config.get("embedding_base_url") or config["base_url"], config["model"], config["embedding_model"], timeout=5)
     return {**_installed_identity(client, client.embedding_model),
-            "input_policy": EMBEDDING_INPUT_POLICY}
+            "base_url": client.base_url, "input_policy": EMBEDDING_INPUT_POLICY,
+            **({'runtime_options': runtime_options(config)} if runtime_options(config) else {})}
 
 
 def _installed_identity(client: OllamaClient, tag: str) -> dict:
@@ -73,6 +82,8 @@ class OllamaClient:
         model: str = DEFAULT_MODEL,
         embedding_model: str = "bge-m3",
         timeout: float = 180,
+        *, num_ctx: int = 8192, num_predict: int = 512, embedding_base_url: str | None = None,
+        num_thread: int | None = None, num_gpu: int | None = None,
     ) -> None:
         parsed = urlsplit(base_url)
         if (
@@ -90,16 +101,32 @@ class OllamaClient:
         if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout 必须为正数秒数")
         self.base_url = base_url.rstrip("/")
+        self.embedding_base_url = (embedding_base_url or base_url).rstrip("/")
+        embedding_url = urlsplit(self.embedding_base_url)
+        if (embedding_url.scheme not in {"http", "https"} or not embedding_url.hostname
+                or embedding_url.username or embedding_url.password or embedding_url.query
+                or embedding_url.fragment or embedding_url.path.rstrip("/")):
+            raise ValueError("embedding_base_url 必须是合法的 Ollama 根地址")
         self.model = model
         # Keep the same non-thinking setting across the five model sizes.
         self.thinking_option = {"think": False} if model in QWEN3_REWRITE_TAGS else {}
         self.embedding_model = embedding_model
         self.timeout = float(timeout)
+        if type(num_ctx) is not int or num_ctx < 1024 or type(num_predict) is not int or num_predict < 1:
+            raise ValueError("num_ctx/num_predict 必须是有效的正整数")
+        self.num_ctx = num_ctx
+        self.num_predict = num_predict
+        self.runtime_options = {}
+        for name, value, minimum in (('num_thread', num_thread, 1), ('num_gpu', num_gpu, 0)):
+            if value is not None:
+                if type(value) is not int or not minimum <= value <= 1024:
+                    raise ValueError(f'{name} must be an integer in [{minimum},1024] or None')
+                self.runtime_options[name] = value
 
-    def _request(self, path: str, payload: dict | None = None) -> dict:
+    def _request(self, path: str, payload: dict | None = None, *, base_url: str | None = None) -> dict:
         body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = Request(
-            self.base_url + path,
+            (base_url or self.base_url) + path,
             data=body,
             headers={"Content-Type": "application/json", "Accept": "application/json"},
             method="GET" if payload is None else "POST",
@@ -149,9 +176,10 @@ class OllamaClient:
                 "stream": False,
                 "keep_alive": "5m",
                 "options": {
+                    **self.runtime_options,
                     "temperature": temperature,
-                    "num_ctx": 8192,
-                    "num_predict": 512,
+                    "num_ctx": self.num_ctx,
+                    "num_predict": self.num_predict,
                     "seed": 42,
                 },
             },
@@ -174,7 +202,8 @@ class OllamaClient:
                 "input": texts,
                 "truncate": True,
                 "keep_alive": "5m",
-            },
+                **({'options': self.runtime_options} if self.runtime_options else {}),
+            }, base_url=self.embedding_base_url,
         )
         vectors = result.get("embeddings")
         if not isinstance(vectors, list) or len(vectors) != len(texts):
