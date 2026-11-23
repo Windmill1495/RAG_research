@@ -18,7 +18,7 @@ sys.path.insert(0, str(PROJECT))
 import adaqr_half_dataset as dataset
 import adaqr_half_rewards as rewards
 from adaqr_component_formats import recovered_plan
-from adaqr_support.adaqr_model import completion_log_probability, require_ml
+from adaqr_support.adaqr_model import completion_log_probability, qwen_prompt, require_ml
 from paper_runtime import OriginalCompCQRClient, PaperBM25, RRF_CONFIG
 from rag.compcqr import PROMPT_VERSION
 from rag.data import read_jsonl
@@ -43,7 +43,7 @@ SOURCE = input_path("ADAQR_INPUT_SAMPLES", ROOT / "inputs/samples.jsonl")
 LOCK = RUN / ".fusion.lock"
 SFT = input_path("ADAQR_SFT_ADAPTER", ROOT / "inputs/sft")
 INDEX = input_path("ADAQR_LUCENE_INDEX", ROOT / "inputs/lucene")
-MISTRAL = input_path("ADAQR_MISTRAL_DIR", ROOT / "models/Mistral-7B-v0.1")
+CQA = input_path("ADAQR_CQA_DIR", ROOT / "models/Qwen3-8B")
 LLAMA = input_path("ADAQR_LLAMA_DIR", ROOT / "models/Llama-3.1-8B-Instruct")
 VERIFIER = input_path("ADAQR_VERIFIER_DIR", ROOT / "models/DeBERTa-v3-base-mnli-fever-anli")
 EVIDENCE_LAMBDA = float(os.environ.get("ADAQR_EVIDENCE_LAMBDA", "1.0"))
@@ -128,7 +128,7 @@ def completed_shards(phase, rows, identity):
 
 
 def get_baseline_identity(components):
-    return {**components, "arm": "baseline", "answer_model": model_identity(MISTRAL),
+    return {**components, "arm": "baseline", "answer_model": model_identity(CQA),
             "evidence_verifier": model_identity(VERIFIER),
             "evidence_lambda": EVIDENCE_LAMBDA, "evidence_epsilon": EVIDENCE_EPSILON,
             "max_length": MAX_LENGTH, "top_k": SETTINGS.top_k,
@@ -173,15 +173,17 @@ def baseline_operation(components):
 
     retriever = PaperBM25(INDEX)
     torch, model_class, tokenizer_class = require_ml()
-    tokenizer = tokenizer_class.from_pretrained(str(MISTRAL), local_files_only=True)
-    model = model_class.from_pretrained(str(MISTRAL), local_files_only=True,
+    tokenizer = tokenizer_class.from_pretrained(str(CQA), local_files_only=True)
+    model = model_class.from_pretrained(str(CQA), local_files_only=True,
                                         torch_dtype=torch.bfloat16, device_map={"": 0}).eval()
     verifier = EvidenceVerifier(VERIFIER)
 
     def logp(prompt, answer):
+        prompt = qwen_prompt(tokenizer, prompt)
         with torch.inference_mode():
             return float(completion_log_probability(model, tokenizer, prompt, answer,
-                                                    MAX_LENGTH, include_eos=False).item())
+                                                    MAX_LENGTH, include_eos=False,
+                                                    add_special_tokens=False).item())
 
     def score(row):
         record = components[row["id"]]

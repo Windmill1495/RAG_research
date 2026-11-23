@@ -1,13 +1,14 @@
 # AdaQR × CompCQR 基础融合
 
-这个项目用检索结果为多轮查询重写构建偏好对，并用 DPO 训练重写器。对同一轮的每条候选重写，分别做单查询 BM25 和 CompCQR 组合查询。两路各取前 5 个段落，由冻结的 Mistral-7B-v0.1 计算生成训练参考答案的条件对数概率。程序按段落检索权重聚合每一路奖励，然后以 50% 和 50% 合成候选总分。只在同一轮内配对，分差严格大于 0.1 时保留高分与低分候选。
+这个项目用检索结果为多轮查询重写构建偏好对，并用 DPO 训练重写器。对同一轮的每条候选重写，分别做单查询 BM25 和 CompCQR 组合查询。两路各取前 5 个段落，由冻结的 Qwen3-8B 计算生成训练参考答案的条件对数概率。程序按段落检索权重聚合每一路奖励，然后以 50% 和 50% 合成候选总分。只在同一轮内配对，分差严格大于 0.1 时保留高分与低分候选。
 
 ## 本次实验设置
 
 | 环节 | 设置 |
 | --- | --- |
-| SFT | Mistral-7B-v0.1。实验用 4,000 条人工重写中的 3,329 条非首轮样本。 |
-| 候选采样 | 从固定的 39,677 条 QReCC 训练轮次采样，每轮生成 3 条候选。 |
+| SFT | Qwen3-8B，使用非思考模式的对话模板。实验用 4,000 条人工重写中的 3,329 条非首轮样本。 |
+| CQA 奖励模型 | 冻结的 Qwen3-8B，使用非思考模式的对话模板计算参考答案概率。 |
+| 候选采样 | 从 Qwen SFT 重写器对固定的 39,677 条 QReCC 训练轮次采样，每轮生成 3 条候选。 |
 | 半量训练 | 随机种子 42，按轮次和可见历史字符数分层抽取 19,839 轮。候选去重后少于 2 条的轮次在组件生成前剔除。本次实验最终纳入 16,805 轮。 |
 | CompCQR | Llama-3.1-8B-Instruct 生成问答组件。稀疏查询按非空子集组合，每条查询检索深度为 100，使用 RRF 聚合。 |
 | 训练检索 | QReCC 全量段落索引，Pyserini/Lucene BM25，`k1=0.82`、`b=0.68`。 |
@@ -25,7 +26,7 @@ python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/
 python -m pip install -r experiments/adaqr_compcqr/requirements.txt
 ```
 
-1. 准备本地模型、全量 Lucene 索引、现成的 SFT adapter，以及已采样的 `samples.jsonl`。候选文件每行需要 `id`、`split`、`turn`、`history`、`question`、`answer`、`candidates`。使用原采样文件可复用实验的候选输入。
+1. 准备 Qwen3-8B、Llama 模型权重和全量 Lucene 索引，并用 Qwen 重新训练 SFT adapter、采样 `samples.jsonl`。候选文件每行需要 `id`、`split`、`turn`、`history`、`question`、`answer`、`candidates`。旧模型的 adapter 和候选不能复用。
 2. 根据 [提示词资产说明](prompts/compcqr/README.md) 准备原始提示与示例。程序校验资产哈希。
 3. 将 [环境变量示例](experiments/adaqr_compcqr/foundation.env.example) 复制为 `.env`，填写路径和物理 GPU 编号并运行 `source .env`。组件可用 2 或 4 张卡，基础奖励默认使用 `ADAQR_SCORE_GPUS` 的两张卡，可用 `ADAQR_REWARD_GPUS` 单独指定四张卡。
 
@@ -56,7 +57,7 @@ bash run_foundation.sh dpo
 
 `prepare` 写出固定名单及其哈希。`components` 从两个检查点续跑，完成的轮次按原分片写回。`baseline` 记录单查询与组合查询两路奖励、段落及权重。`pairs` 导出偏好对，`dpo` 从 SFT adapter 开始训练。可随时用 `bash run_foundation.sh status` 查看组件和基础评分的累计进度。
 
-基础奖励默认每个 GPU 启动一个评分进程，每个进程用 4 个 Lucene 线程批量执行同一轮的 BM25 查询，并按原查询顺序返回结果。已有奖励记录可继续使用，新增结果由一个进程写回原有的两份检查点。在 16 服务器上指定四张卡可用以下命令。设置 `ADAQR_BM25_BATCH_THREADS=0` 可切回串行检索。
+基础奖励默认每个 GPU 启动一个评分进程，每个进程用 4 个 Lucene 线程批量执行同一轮的 BM25 查询，并按原查询顺序返回结果。模型与代码签名相同时，已有奖励记录可继续使用，新增结果由一个进程写回原有的两份检查点。在 16 服务器上指定四张卡可用以下命令。设置 `ADAQR_BM25_BATCH_THREADS=0` 可切回串行检索。
 
 ```bash
 ADAQR_REWARD_GPUS=2,3,4,5 bash run_foundation.sh baseline

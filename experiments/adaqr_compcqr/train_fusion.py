@@ -9,7 +9,7 @@ import sys
 
 
 from adaqr_support.adaqr import AdaQRSettings, preference_pairs
-from paper_runtime import MISTRAL
+from paper_runtime import QWEN
 
 HERE = Path(__file__).resolve().parent
 OUTPUTS = HERE / "outputs"
@@ -65,7 +65,7 @@ def main():
     sft = stages.add_parser("sft", help="Train a QLoRA adapter on reference rewrites")
     sft.add_argument("--seed-data", type=Path, required=True)
     sft.add_argument("--seed-source", choices=["infocqr_initial_fsl", "user_qrecc"], default="infocqr_initial_fsl")
-    sft.add_argument("--base-model", default=MISTRAL, help="Mistral-7B-v0.1 HF ID or local snapshot")
+    sft.add_argument("--base-model", default=QWEN, help="Qwen3-8B HF ID or local snapshot")
     sample = stages.add_parser("sample", help="Sample three candidates from the SFT rewriter")
     sample.add_argument("--target-data", type=Path, required=True)
     sample.add_argument("--target-ids", type=Path, required=True,

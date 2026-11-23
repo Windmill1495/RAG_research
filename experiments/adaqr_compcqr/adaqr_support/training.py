@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 
 from .adaqr import rewrite_prompt
-from .adaqr_model import completion_log_probability, sample_rewrites
+from .adaqr_model import completion_log_probability, qwen_prompt, sample_rewrites
 from rag.data import read_jsonl, validate_history
 from rag.rewrite_data import iter_official_turns
 
@@ -132,8 +132,9 @@ def sft(args):
     torch.manual_seed(args.seed)
     model, tokenizer = quantized_model(args.base_model)
     def loss(row):
-        logp = completion_log_probability(model, tokenizer, rewrite_prompt(row["history"], row["question"]),
-                                          row["rewrite"], args.max_length)
+        prompt = qwen_prompt(tokenizer, rewrite_prompt(row["history"], row["question"]))
+        logp = completion_log_probability(model, tokenizer, prompt, row["rewrite"], args.max_length,
+                                          add_special_tokens=False)
         return -logp
     steps = run_optimization(model, selected, loss, 1e-4, args.epochs, args.seed, args.output)
     (args.output / "adaqr_metadata.json").write_text(json.dumps({"stage": "sft", "seed_data": str(args.seed_data),
@@ -169,8 +170,8 @@ def sample(args):
     # An interrupted run keeps the partial file separate from completed samples.
     with partial.open("x", encoding="utf-8") as stream:
         for index, row in enumerate(rows, 1):
-            prompt = rewrite_prompt(row["history"], row["question"])
-            candidates = sample_rewrites(model, tokenizer, prompt, 3, 1.0)
+            prompt = qwen_prompt(tokenizer, rewrite_prompt(row["history"], row["question"]))
+            candidates = sample_rewrites(model, tokenizer, prompt, 3, 1.0, add_special_tokens=False)
             if not all(candidates):
                 raise ValueError(f"Empty sampled rewrite for training turn {row['id']}")
             stream.write(json.dumps({**row, "split": "train", "candidates": candidates},
@@ -192,11 +193,12 @@ def dpo(args):
     reference, tokenizer = quantized_model(base, str(args.sft_adapter))
     reference.eval()
     for index, row in enumerate(rows, 1):
+        row["model_prompt"] = qwen_prompt(tokenizer, row["prompt"])
         with torch.no_grad():
-            row["reference_chosen"] = float(completion_log_probability(reference, tokenizer, row["prompt"],
-                                                    row["chosen"], args.max_length).item())
-            row["reference_rejected"] = float(completion_log_probability(reference, tokenizer, row["prompt"],
-                                                    row["rejected"], args.max_length).item())
+            row["reference_chosen"] = float(completion_log_probability(reference, tokenizer, row["model_prompt"],
+                                                    row["chosen"], args.max_length, add_special_tokens=False).item())
+            row["reference_rejected"] = float(completion_log_probability(reference, tokenizer, row["model_prompt"],
+                                                    row["rejected"], args.max_length, add_special_tokens=False).item())
         if index == 1 or index % 50 == 0 or index == len(rows):
             print(f"Scoring SFT reference {index}/{len(rows)}", flush=True)
     del reference
@@ -204,8 +206,10 @@ def dpo(args):
     torch.cuda.empty_cache()
     policy, tokenizer = quantized_model(base, str(args.sft_adapter))
     def loss(row):
-        chosen = completion_log_probability(policy, tokenizer, row["prompt"], row["chosen"], args.max_length)
-        rejected = completion_log_probability(policy, tokenizer, row["prompt"], row["rejected"], args.max_length)
+        chosen = completion_log_probability(policy, tokenizer, row["model_prompt"], row["chosen"],
+                                            args.max_length, add_special_tokens=False)
+        rejected = completion_log_probability(policy, tokenizer, row["model_prompt"], row["rejected"],
+                                              args.max_length, add_special_tokens=False)
         margin = (chosen - row["reference_chosen"]) - (rejected - row["reference_rejected"])
         return -torch.nn.functional.logsigmoid(0.1 * margin)
     steps = run_optimization(policy, rows, loss, 1e-5, args.epochs, args.seed, args.output)

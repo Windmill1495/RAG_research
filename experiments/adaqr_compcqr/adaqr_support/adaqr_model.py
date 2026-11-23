@@ -14,10 +14,16 @@ def require_ml():
     return torch, AutoModelForCausalLM, AutoTokenizer
 
 
+def qwen_prompt(tokenizer, prompt: str) -> str:
+    return tokenizer.apply_chat_template(
+        [{"role": "user", "content": prompt}], tokenize=False,
+        add_generation_prompt=True, enable_thinking=False)
+
+
 def encode_completion(tokenizer, prompt: str, completion: str, max_length: int,
-                      include_eos: bool = True):
+                      include_eos: bool = True, *, add_special_tokens: bool = True):
     """Keep the complete target and truncate only old prompt context if necessary."""
-    prefix = tokenizer.encode(prompt, add_special_tokens=True)
+    prefix = tokenizer.encode(prompt, add_special_tokens=add_special_tokens)
     target = tokenizer.encode(completion, add_special_tokens=False)
     if include_eos and tokenizer.eos_token_id is not None:
         target.append(tokenizer.eos_token_id)
@@ -29,10 +35,12 @@ def encode_completion(tokenizer, prompt: str, completion: str, max_length: int,
 
 
 def completion_log_probability(model, tokenizer, prompt: str, completion: str,
-                               max_length: int = 2048, include_eos: bool = True):
+                               max_length: int = 2048, include_eos: bool = True,
+                               *, add_special_tokens: bool = True):
     """Sum token log probabilities of the complete target under causal LM."""
     torch, _, _ = require_ml()
-    ids, start = encode_completion(tokenizer, prompt, completion, max_length, include_eos)
+    ids, start = encode_completion(tokenizer, prompt, completion, max_length, include_eos,
+                                   add_special_tokens=add_special_tokens)
     device = next(model.parameters()).device
     input_ids = torch.tensor([ids], dtype=torch.long, device=device)
     logits = model(input_ids=input_ids, use_cache=False).logits[0, start - 1:-1].float()
@@ -41,9 +49,10 @@ def completion_log_probability(model, tokenizer, prompt: str, completion: str,
 
 
 def sample_rewrites(model, tokenizer, prompt: str, count: int = 3,
-                    temperature: float = 1.0, max_new_tokens: int = 128) -> list[str]:
+                    temperature: float = 1.0, max_new_tokens: int = 128,
+                    *, add_special_tokens: bool = True) -> list[str]:
     torch, _, _ = require_ml()
-    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=add_special_tokens)
     encoded = {key: value.to(next(model.parameters()).device) for key, value in encoded.items()}
     with torch.no_grad():
         generated = model.generate(**encoded, do_sample=True, temperature=temperature,
@@ -77,8 +86,8 @@ def rewrite_with_adapter(question: str, history: list[dict], adapter_path: str) 
     from .adaqr import rewrite_prompt
     model, tokenizer = load_rewriter(adapter_path)
     torch, _, _ = require_ml()
-    prompt = rewrite_prompt(history, question)
-    encoded = tokenizer(prompt, return_tensors="pt").to(next(model.parameters()).device)
+    prompt = qwen_prompt(tokenizer, rewrite_prompt(history, question))
+    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(next(model.parameters()).device)
     with torch.no_grad():
         result = model.generate(**encoded, do_sample=False, max_new_tokens=128,
                                 pad_token_id=tokenizer.eos_token_id)
