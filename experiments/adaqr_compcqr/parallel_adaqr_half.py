@@ -45,6 +45,9 @@ SFT = input_path("ADAQR_SFT_ADAPTER", ROOT / "inputs/sft")
 INDEX = input_path("ADAQR_LUCENE_INDEX", ROOT / "inputs/lucene")
 MISTRAL = input_path("ADAQR_MISTRAL_DIR", ROOT / "models/Mistral-7B-v0.1")
 LLAMA = input_path("ADAQR_LLAMA_DIR", ROOT / "models/Llama-3.1-8B-Instruct")
+VERIFIER = input_path("ADAQR_VERIFIER_DIR", ROOT / "models/DeBERTa-v3-base-mnli-fever-anli")
+EVIDENCE_LAMBDA = float(os.environ.get("ADAQR_EVIDENCE_LAMBDA", "1.0"))
+EVIDENCE_EPSILON = 1e-4
 GPUS = gpu_indices("ADAQR_SCORE_GPUS", "0,1", count=2)
 SHARDS = 2
 SEED = 42
@@ -126,10 +129,13 @@ def completed_shards(phase, rows, identity):
 
 def get_baseline_identity(components):
     return {**components, "arm": "baseline", "answer_model": model_identity(MISTRAL),
+            "evidence_verifier": model_identity(VERIFIER),
+            "evidence_lambda": EVIDENCE_LAMBDA, "evidence_epsilon": EVIDENCE_EPSILON,
             "max_length": MAX_LENGTH, "top_k": SETTINGS.top_k,
             "index": {path.name: stats(path) for path in sorted(INDEX.iterdir())
                       if path.is_file() and path.name != "write.lock"},
             "reward_code": file_hashes([ROOT / "adaqr_half_rewards.py",
+                                        ROOT / "evidence_verifier.py",
                                         ROOT / "train_fusion.py",
                                         ROOT / "adaqr_support/adaqr.py",
                                         ROOT / "adaqr_support/adaqr_model.py"])}
@@ -163,11 +169,14 @@ def component_operation():
 
 
 def baseline_operation(components):
+    from evidence_verifier import EvidenceVerifier
+
     retriever = PaperBM25(INDEX)
     torch, model_class, tokenizer_class = require_ml()
     tokenizer = tokenizer_class.from_pretrained(str(MISTRAL), local_files_only=True)
     model = model_class.from_pretrained(str(MISTRAL), local_files_only=True,
                                         torch_dtype=torch.bfloat16, device_map={"": 0}).eval()
+    verifier = EvidenceVerifier(VERIFIER)
 
     def logp(prompt, answer):
         with torch.inference_mode():
@@ -179,7 +188,9 @@ def baseline_operation(components):
         if record["status"] != "ok":
             return record
         result = rewards.score_turn(row, retriever=retriever, components=record["components"],
-                                    answer_logp=logp, config=RRF_CONFIG)
+                                    answer_logp=logp, evidence_scores=verifier.score_many,
+                                    evidence_lambda=EVIDENCE_LAMBDA,
+                                    evidence_epsilon=EVIDENCE_EPSILON, config=RRF_CONFIG)
         if "format_recoveries" in record:
             result["format_recoveries"] = record["format_recoveries"]
         if "component_origin" in record:
