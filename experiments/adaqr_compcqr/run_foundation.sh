@@ -36,11 +36,14 @@ print(",".join(devices[index] for index in indices))
 
 score_gpus=${ADAQR_SCORE_GPUS:-0,1}
 case "${1:-help}" in
-    prepare|status|baseline)
+    prepare|status)
         exec "$python" -u -B parallel_adaqr_half.py "$1"
         ;;
     components)
         exec "$python" -u -B parallel_components.py run
+        ;;
+    baseline)
+        exec "$python" -u -B parallel_components.py baseline
         ;;
     pairs)
         test -s "$output/rewards_baseline/manifest.json"

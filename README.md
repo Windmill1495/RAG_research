@@ -27,7 +27,7 @@ python -m pip install -r experiments/adaqr_compcqr/requirements.txt
 
 1. 准备本地模型、全量 Lucene 索引、现成的 SFT adapter，以及已采样的 `samples.jsonl`。候选文件每行需要 `id`、`split`、`turn`、`history`、`question`、`answer`、`candidates`。使用原采样文件可复用实验的候选输入。
 2. 根据 [提示词资产说明](prompts/compcqr/README.md) 准备原始提示与示例。程序校验资产哈希。
-3. 将 [环境变量示例](experiments/adaqr_compcqr/foundation.env.example) 复制为 `.env`，填写路径和物理 GPU 编号并运行 `source .env`。组件可用 2 或 4 张卡，基础奖励使用配置的 2 张卡。
+3. 将 [环境变量示例](experiments/adaqr_compcqr/foundation.env.example) 复制为 `.env`，填写路径和物理 GPU 编号并运行 `source .env`。组件可用 2 或 4 张卡，基础奖励默认使用 `ADAQR_SCORE_GPUS` 的两张卡，可用 `ADAQR_REWARD_GPUS` 单独指定四张卡。
 
 从原始资产重建训练时，实验目录里的 `build_dpo_training.py` 从官方 QReCC 和 InfoCQR 固定划分生成训练轮次和 ID，`prepare_user_sft.py` 转换用户提供的 SFT 样本，`prepare_paper_index.py` 从官方段落归档构建 Lucene。用以下命令检查输入参数和训练入口。
 
@@ -55,6 +55,12 @@ bash run_foundation.sh dpo
 ```
 
 `prepare` 写出固定名单及其哈希。`components` 从两个检查点续跑，完成的轮次按原分片写回。`baseline` 记录单查询与组合查询两路奖励、段落及权重。`pairs` 导出偏好对，`dpo` 从 SFT adapter 开始训练。可随时用 `bash run_foundation.sh status` 查看组件和基础评分的累计进度。
+
+基础奖励默认每个 GPU 启动一个评分进程，每个进程用 4 个 Lucene 线程批量执行同一轮的 BM25 查询，并按原查询顺序返回结果。已有奖励记录可继续使用，新增结果由一个进程写回原有的两份检查点。在 16 服务器上指定四张卡可用以下命令。设置 `ADAQR_BM25_BATCH_THREADS=0` 可切回串行检索。
+
+```bash
+ADAQR_REWARD_GPUS=2,3,4,5 bash run_foundation.sh baseline
+```
 
 ### 复现原 2,000 轮评测
 
