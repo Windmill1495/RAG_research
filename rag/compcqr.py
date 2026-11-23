@@ -167,12 +167,32 @@ def _passage_key(hit: dict) -> str:
     return value
 
 
-def fuse_rankings(rankings: list[list[dict]], rrf_k: float = 0) -> list[dict]:
-    """Aggregate unique passages per query, preserving raw ranks and deterministic ties."""
+def fuse_rankings(rankings: list[list[dict]], rrf_k: float = 0,
+                  redundancy_weight: float = 0) -> list[dict]:
+    """Blend ordinary RRF with RRF balanced across similar query rankings."""
     if (type(rrf_k) not in {int, float} or not math.isfinite(rrf_k) or rrf_k < 0):
         raise ValueError("CompCQR RRF constant must be a finite nonnegative number")
+    if not 0 <= redundancy_weight <= 1:
+        raise ValueError("redundancy_weight must be between 0 and 1")
+    weights = [1.0] * len(rankings)
+    if redundancy_weight and rankings:
+        top_sets = [{_passage_key(hit) for hit in ranking[:20]} for ranking in rankings]
+        groups = []
+        for index, current in enumerate(top_sets):
+            for group in groups:
+                if all(not (current | top_sets[other]) or
+                       len(current & top_sets[other]) / len(current | top_sets[other]) >= 0.7
+                       for other in group):
+                    group.append(index)
+                    break
+            else:
+                groups.append([index])
+        for group in groups:
+            balanced = len(rankings) / (len(groups) * len(group))
+            for index in group:
+                weights[index] = 1 - redundancy_weight + redundancy_weight * balanced
     scores, frequencies, originals = {}, {}, {}
-    for ranking in rankings:
+    for ranking, weight in zip(rankings, weights):
         seen = set()
         for rank, hit in enumerate(ranking, 1):
             key = _passage_key(hit)
@@ -180,7 +200,7 @@ def fuse_rankings(rankings: list[list[dict]], rrf_k: float = 0) -> list[dict]:
                 continue
             seen.add(key)
             originals.setdefault(key, hit)
-            scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
+            scores[key] = scores.get(key, 0.0) + weight / (rrf_k + rank)
             frequencies[key] = frequencies.get(key, 0) + 1
     order = sorted(scores, key=lambda key: (-scores[key], -frequencies[key], key))
     return [{**originals[key], "score": scores[key], "rrf_score": scores[key],
@@ -213,11 +233,13 @@ def retrieve_plan(question: str, history: list[dict], queries: list[str], *, ret
     started = time.perf_counter()
     rankings = retriever.search_many(queries, config.get("compcqr_retrieval_depth", 100))
     retrieved = time.perf_counter()
-    hits = fuse_rankings(rankings, config.get("compcqr_rrf_k", 0))[:config.get("compcqr_retrieval_depth", 100)]
+    hits = fuse_rankings(rankings, config.get("compcqr_rrf_k", 0),
+                         config.get("compcqr_redundancy_weight", 0.5))[:config.get("compcqr_retrieval_depth", 100)]
     fused = time.perf_counter()
     trace.update(query_count=len(queries), retrieved_lists=len(rankings),
                  fused_passage_count=len(hits), selection_error=None, selected_passage_id=None,
                  cross_query_rrf_k=config.get("compcqr_rrf_k", 0),
+                 redundancy_weight=config.get("compcqr_redundancy_weight", 0.5),
                  selection_applied=False, selection_candidate_count=0)
     candidates = _selection_passages(hits, config, question, history)
     trace["selection_candidate_count"] = len(candidates)

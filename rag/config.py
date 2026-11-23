@@ -31,6 +31,7 @@ DEFAULTS = {
     "compcqr_max_components": 5,
     "compcqr_retrieval_depth": 100,
     "compcqr_rrf_k": 0,
+    "compcqr_redundancy_weight": 0.5,
     "compcqr_selection_top_k": 5,
     "compcqr_passage_chars": 700,
     "compcqr_selection_char_budget": 6000,
@@ -140,6 +141,8 @@ def load_config(project_dir: Path, overrides: dict | None = None, profile: str |
             or not isinstance(config["compcqr_rrf_k"], (int, float))
             or not math.isfinite(config["compcqr_rrf_k"]) or config["compcqr_rrf_k"] < 0):
         raise ValueError("compcqr_rrf_k 必须是非负有限数")
+    if not 0 <= config["compcqr_redundancy_weight"] <= 1:
+        raise ValueError("compcqr_redundancy_weight 必须在 0 到 1 之间")
     if type(config["compcqr_select"]) is not bool:
         raise ValueError("compcqr_select 必须是布尔值")
     if config.get("retrieval_store", "local") not in {"local", "opensearch"}:

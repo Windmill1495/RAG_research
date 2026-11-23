@@ -53,7 +53,8 @@ def score_turn(row, *, retriever, components, answer_logp, config):
     for candidate, plan in plans.items():
         single, single_ids, single_evidence = branch(by_query[candidate][:SETTINGS.top_k])
         fused = fuse_rankings([by_query[query][:depth] for query in plan],
-                              config["compcqr_rrf_k"])
+                              config["compcqr_rrf_k"],
+                              config.get("compcqr_redundancy_weight", 0.5))
         multi, multi_ids, multi_evidence = branch(fused[:SETTINGS.top_k])
         records.append({"rewrite": candidate, "single_reward": single, "fusion_reward": multi,
                         "single_passage_ids": single_ids, "fusion_passage_ids": multi_ids,

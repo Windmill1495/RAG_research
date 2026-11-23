@@ -15,6 +15,7 @@ RRF_CONFIG = {
     "compcqr_max_components": 5,
     "compcqr_retrieval_depth": 100,
     "compcqr_rrf_k": 0,
+    "compcqr_redundancy_weight": 0.5,
 }
 
 
