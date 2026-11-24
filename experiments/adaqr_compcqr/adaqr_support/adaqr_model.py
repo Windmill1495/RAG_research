@@ -14,10 +14,18 @@ def require_ml():
     return torch, AutoModelForCausalLM, AutoTokenizer
 
 
+def prompt_token_ids(tokenizer, prompt: str):
+    if "enable_thinking" in (tokenizer.chat_template or ""):
+        return tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}], tokenize=True,
+            add_generation_prompt=True, enable_thinking=False)
+    return tokenizer.encode(prompt, add_special_tokens=True)
+
+
 def encode_completion(tokenizer, prompt: str, completion: str, max_length: int,
                       include_eos: bool = True):
     """Keep the complete target and truncate only old prompt context if necessary."""
-    prefix = tokenizer.encode(prompt, add_special_tokens=True)
+    prefix = prompt_token_ids(tokenizer, prompt)
     target = tokenizer.encode(completion, add_special_tokens=False)
     if include_eos and tokenizer.eos_token_id is not None:
         target.append(tokenizer.eos_token_id)
@@ -43,8 +51,8 @@ def completion_log_probability(model, tokenizer, prompt: str, completion: str,
 def sample_rewrites(model, tokenizer, prompt: str, count: int = 3,
                     temperature: float = 1.0, max_new_tokens: int = 128) -> list[str]:
     torch, _, _ = require_ml()
-    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
-    encoded = {key: value.to(next(model.parameters()).device) for key, value in encoded.items()}
+    encoded = {"input_ids": torch.tensor([prompt_token_ids(tokenizer, prompt)],
+                                          device=next(model.parameters()).device)}
     with torch.no_grad():
         generated = model.generate(**encoded, do_sample=True, temperature=temperature,
                                    num_return_sequences=count, max_new_tokens=max_new_tokens,
@@ -78,7 +86,8 @@ def rewrite_with_adapter(question: str, history: list[dict], adapter_path: str) 
     model, tokenizer = load_rewriter(adapter_path)
     torch, _, _ = require_ml()
     prompt = rewrite_prompt(history, question)
-    encoded = tokenizer(prompt, return_tensors="pt").to(next(model.parameters()).device)
+    encoded = {"input_ids": torch.tensor([prompt_token_ids(tokenizer, prompt)],
+                                          device=next(model.parameters()).device)}
     with torch.no_grad():
         result = model.generate(**encoded, do_sample=False, max_new_tokens=128,
                                 pad_token_id=tokenizer.eos_token_id)

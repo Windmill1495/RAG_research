@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 
-MISTRAL = "mistralai/Mistral-7B-v0.1"
+QWEN3 = "Qwen/Qwen3-8B"
 LLAMA = "meta-llama/Llama-3.1-8B-Instruct"
 BM25_K1 = 0.82
 BM25_B = 0.68

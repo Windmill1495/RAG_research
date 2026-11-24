@@ -43,7 +43,7 @@ SOURCE = input_path("ADAQR_INPUT_SAMPLES", ROOT / "inputs/samples.jsonl")
 LOCK = RUN / ".fusion.lock"
 SFT = input_path("ADAQR_SFT_ADAPTER", ROOT / "inputs/sft")
 INDEX = input_path("ADAQR_LUCENE_INDEX", ROOT / "inputs/lucene")
-MISTRAL = input_path("ADAQR_MISTRAL_DIR", ROOT / "models/Mistral-7B-v0.1")
+QWEN3 = input_path("ADAQR_QWEN3_DIR", ROOT / "models/Qwen3-8B")
 LLAMA = input_path("ADAQR_LLAMA_DIR", ROOT / "models/Llama-3.1-8B-Instruct")
 VERIFIER = input_path("ADAQR_VERIFIER_DIR", ROOT / "models/DeBERTa-v3-base-mnli-fever-anli")
 EVIDENCE_LAMBDA = float(os.environ.get("ADAQR_EVIDENCE_LAMBDA", "1.0"))
@@ -128,7 +128,7 @@ def completed_shards(phase, rows, identity):
 
 
 def get_baseline_identity(components):
-    return {**components, "arm": "baseline", "answer_model": model_identity(MISTRAL),
+    return {**components, "arm": "baseline", "answer_model": model_identity(QWEN3),
             "evidence_verifier": model_identity(VERIFIER),
             "evidence_lambda": EVIDENCE_LAMBDA, "evidence_epsilon": EVIDENCE_EPSILON,
             "max_length": MAX_LENGTH, "top_k": SETTINGS.top_k,
@@ -173,8 +173,8 @@ def baseline_operation(components):
 
     retriever = PaperBM25(INDEX)
     torch, model_class, tokenizer_class = require_ml()
-    tokenizer = tokenizer_class.from_pretrained(str(MISTRAL), local_files_only=True)
-    model = model_class.from_pretrained(str(MISTRAL), local_files_only=True,
+    tokenizer = tokenizer_class.from_pretrained(str(QWEN3), local_files_only=True)
+    model = model_class.from_pretrained(str(QWEN3), local_files_only=True,
                                         torch_dtype=torch.bfloat16, device_map={"": 0}).eval()
     verifier = EvidenceVerifier(VERIFIER)
 
