@@ -1,6 +1,41 @@
-# AdaQR × CompCQR 基础融合
+# AdaQR × CompCQR 证据奖励
 
-这个项目用检索结果为多轮查询重写构建偏好对，并用 DPO 训练重写器。对同一轮的每条候选重写，分别做单查询 BM25 和 CompCQR 组合查询。两路各取前 5 个段落，由冻结的 Mistral-7B-v0.1 计算生成训练参考答案的条件对数概率。程序按段落检索权重聚合每一路奖励，然后以 50% 和 50% 合成候选总分。只在同一轮内配对，分差严格大于 0.1 时保留高分与低分候选。
+这个项目在基础融合的奖励上加入逐段证据评分，再用更新后的偏好对训练重写器。对同一轮的每条候选重写，基础融合分别做单查询 BM25 和 CompCQR 组合查询。两路各取前 5 个段落，由冻结的 Mistral-7B-v0.1 计算训练参考答案的条件对数概率。证据评分统一使用该轮固定的独立问题和训练答案。程序按段落检索权重聚合每一路奖励，然后以 50% 和 50% 合成候选总分。只在同一轮内配对，分差严格大于 0.1 时保留高分与低分候选。
+
+## 16 服务器运行方式
+
+这一版使用基础融合已发布的奖励记录作为输入。原记录提供两个检索分支的段落、排序权重和答案对数概率。冻结的 DeBERTa 验证器取本轮保存的 `components.mq` 和训练集参考答案构造一个假设，各候选及两路检索共用该假设。同一轮内一个段落的 NLI 分数只计算一次。
+
+每个段落的支持度为 `max(0, P(蕴含) - P(矛盾))`。按原检索权重求加权对数证据项，再加到各路原奖励上。默认公式为 `原奖励 + λ × Σ(检索权重 × log(ε + (1-ε) × 支持度))`，其中 `λ=1.0`，`ε=0.1`。评测仍以查询重写器输出做检索，参考答案用于训练期的证据验证。
+
+从项目根目录进入 `experiments/adaqr_compcqr`，按需运行对应阶段。
+
+```bash
+cd experiments/adaqr_compcqr
+bash run_server16_evidence.sh check
+bash run_server16_evidence.sh smoke 3
+bash run_server16_evidence.sh rewards
+bash run_server16_evidence.sh pairs
+bash run_server16_evidence.sh dpo
+bash run_server16_evidence.sh evaluate single --dry-run
+bash run_server16_evidence.sh evaluate single
+```
+
+| 命令 | 用途 |
+| --- | --- |
+| `check` | 预检已发布的基础融合结果和证据验证器 |
+| `smoke [轮数]` | 使用 CPU 验证少量已有轮次 |
+| `rewards` | 通过 GPU 补算证据奖励并合并分片 |
+| `pairs` | 导出新偏好对，沿用两路各一半及分差阈值 `0.1` |
+| `dpo` | 从原 SFT adapter 重新开始，使用与基础融合相同的四卡训练器，独立保存参考评分再执行 DPO |
+| `evaluate single` | 按固定 2,000 轮计划进行单查询推理，也可选 `compcqr`，与原对照一样向选择器提供 5 个候选段落 |
+| `status` | 查看证据奖励、偏好对和模型产物 |
+
+默认复用 `/data1/zixuan/RAG_Research/experiments/adaqr_compcqr/outputs/train_half_v1` 和同一实验目录下的 `outputs/train4000_v1/sft`，通过 `ADAQR_FOUNDATION_RUN` 与 `ADAQR_SFT_ADAPTER` 可指定其他输入。验证器默认读取 `/data1/zixuan/models/DeBERTa-v3-base-mnli-fever-anli`，可通过 `ADAQR_VERIFIER_DIR` 指定路径。Python 默认使用 `/data1/zixuan/adaqr_compcqr_env/bin/python`。
+
+训练和验证默认使用物理 GPU `2,3,4,5`。`ADAQR_EVIDENCE_GPUS` 接受逗号分隔的物理 GPU 编号，对同一批奖励分片续跑时保持 GPU 数量一致。GPU 阶段会检查显存，并取得与基础融合共享的运行锁，适合在基础融合 GPU 任务结束后启动。权重、数值下限和每批段落数可通过 `ADAQR_EVIDENCE_WEIGHT`、`ADAQR_EVIDENCE_EPSILON`、`ADAQR_EVIDENCE_BATCH_SIZE` 设置。
+
+结果默认保存在本项目 `experiments/adaqr_compcqr/outputs/server16_evidence/`，包括 `rewards_evidence/`、`preferences_evidence.jsonl`、`dpo_evidence_reference/`、`dpo_evidence/` 及评测报告。`ADAQR_EVIDENCE_OUTPUT` 可以指定当前实验 `outputs/` 下的新目录，用于另一组参数。基础融合结果作为只读输入。
 
 ## 本次实验设置
 
