@@ -4,7 +4,7 @@ import math
 
 from adaqr_support.adaqr import answer_prompt, marginal_reward, rewrite_prompt
 from evidence_verifier import NLI_LABELS
-from rag.compcqr import compose_queries, fuse_rankings
+from rag.compcqr import fuse_rankings, supported_answer_queries
 from train_fusion import SETTINGS, candidates_for
 
 
@@ -86,17 +86,25 @@ def score_turn(row, *, retriever, components, answer_logp, evidence_scores,
                evidence_lambda, evidence_epsilon, config):
     """Retrieve and score both rankings, then apply the same evidence pass as reuse."""
     candidates = candidates_for(row)
-    plans = {
-        candidate: compose_queries({**components, "mq": candidate}, config["retriever_backend"],
-                                   config["compcqr_max_components"])
-        for candidate in candidates
-    }
     depth = config["compcqr_retrieval_depth"]
-    queries = list(dict.fromkeys([*candidates, *(query for plan in plans.values() for query in plan)]))
-    ranks = retriever.search_many(queries, max(depth, SETTINGS.top_k))
-    if len(queries) != len(ranks):
-        raise ValueError("Search result count differs from the number of distinct queries")
-    by_query = dict(zip(queries, ranks))
+    initial = list(dict.fromkeys([*candidates, *(
+        [components["mq2"]] if components.get("mq2") and components.get("ma2") else [])]))
+    by_query = dict(zip(initial, retriever.search_many(initial, max(depth, SETTINGS.top_k))))
+    followup_passages = [
+        hit.get("text") or retriever.passage_text(hit.get("passage_id") or hit["id"])
+        for hit in by_query[components["mq2"]][:5]
+    ] if components.get("mq2") and components.get("ma2") else []
+    plans = {}
+    for candidate in candidates:
+        passages = [hit.get("text") or retriever.passage_text(hit.get("passage_id") or hit["id"])
+                    for hit in by_query[candidate][:5]]
+        plans[candidate], _ = supported_answer_queries(
+            {**components, "mq": candidate}, row["question"], row["history"],
+            {"mq": passages, "mq2": followup_passages},
+            config["retriever_backend"], config["compcqr_max_components"])
+    queries = list(dict.fromkeys(query for plan in plans.values() for query in plan))
+    remaining = [query for query in queries if query not in by_query]
+    by_query.update(zip(remaining, retriever.search_many(remaining, max(depth, SETTINGS.top_k))))
     text_by_id = {}
     logps_by_id = {}
 

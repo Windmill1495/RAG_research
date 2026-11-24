@@ -41,6 +41,41 @@ def compose_queries(components: dict, backend: str = "hybrid", max_components: i
     return queries
 
 
+ANSWER_TERM = re.compile(r"\b(?:[12]\d{3}|[A-Z]{2,}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b")
+
+
+def supported_answer_queries(components: dict, question: str, history: list[dict],
+                             passages_by_query: dict[str, list[str]], backend: str,
+                             max_components: int) -> tuple[list[str], dict]:
+    """Restrict unsupported answer terms to one intact paired query."""
+    filtered, removed = components.copy(), {}
+    for query_name, answer_name in (("mq", "ma"), ("mq2", "ma2")):
+        answer = components.get(answer_name, "")
+        if not answer or not components.get(query_name):
+            continue
+        source = "\n".join([question, *(item["content"] for item in history),
+                            *passages_by_query[query_name][:5]])
+        terms = []
+        for match in ANSWER_TERM.finditer(answer):
+            term = match.group()
+            if match.start() == 0 and term.istitle() and " " not in term:
+                continue  # Sentence-initial capitalization alone is not a name.
+            pattern = r"(?<!\w)" + re.escape(term).replace(r"\ ", r"\s+") + r"(?!\w)"
+            if not re.search(pattern, source, re.I):
+                terms.append(term)
+        if terms:
+            removed[answer_name] = terms
+            for term in terms:
+                pattern = r"(?<!\w)" + re.escape(term).replace(r"\ ", r"\s+") + r"(?!\w)"
+                answer = re.sub(pattern, "", answer)
+            filtered[answer_name] = " ".join(answer.split())
+    queries = compose_queries(filtered, backend, max_components)
+    for query_name, answer_name in (("mq", "ma"), ("mq2", "ma2")):
+        if answer_name in removed and components.get(query_name):
+            queries.append(components[query_name] + "\n" + components[answer_name])
+    return list(dict.fromkeys(queries)), removed
+
+
 def _answer(value, *, allow_empty: bool = False) -> str:
     if not isinstance(value, str):
         raise ValueError("Component answer must be a string")
@@ -211,11 +246,31 @@ def retrieve_plan(question: str, history: list[dict], queries: list[str], *, ret
     trace = {**trace, "stage_errors": list(trace.get("stage_errors", [])),
              "raw_responses": list(trace.get("raw_responses", []))}
     started = time.perf_counter()
-    rankings = retriever.search_many(queries, config.get("compcqr_retrieval_depth", 100))
+    depth = config.get("compcqr_retrieval_depth", 100)
+    removed = {}
+    components = trace.get("components", {})
+    if config.get("retriever_backend") == "bm25" and (components.get("ma") or components.get("ma2")):
+        initial = list(dict.fromkeys(components[name] for name, answer_name in
+            (("mq", "ma"), ("mq2", "ma2")) if components.get(name) and components.get(answer_name)))
+        by_query = dict(zip(initial, retriever.search_many(initial, depth)))
+        passages_by_query = {
+            name: [hit.get("text") or retriever.passage_text(_passage_key(hit))
+                   for hit in by_query[components[name]][:5]]
+            for name, answer_name in (("mq", "ma"), ("mq2", "ma2"))
+            if components.get(name) and components.get(answer_name)
+        }
+        queries, removed = supported_answer_queries(components, question, history,
+            passages_by_query, "bm25", config.get("compcqr_max_components", 5))
+        remaining = [query for query in queries if query not in by_query]
+        by_query.update(zip(remaining, retriever.search_many(remaining, depth)))
+        rankings = [by_query[query] for query in queries]
+    else:
+        rankings = retriever.search_many(queries, depth)
     retrieved = time.perf_counter()
     hits = fuse_rankings(rankings, config.get("compcqr_rrf_k", 0))[:config.get("compcqr_retrieval_depth", 100)]
     fused = time.perf_counter()
-    trace.update(query_count=len(queries), retrieved_lists=len(rankings),
+    trace.update(query_count=len(queries), queries=queries, retrieved_lists=len(rankings),
+                 unsupported_answer_terms=removed,
                  fused_passage_count=len(hits), selection_error=None, selected_passage_id=None,
                  cross_query_rrf_k=config.get("compcqr_rrf_k", 0),
                  selection_applied=False, selection_candidate_count=0)
