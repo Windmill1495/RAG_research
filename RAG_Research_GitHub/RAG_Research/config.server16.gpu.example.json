@@ -1,0 +1,19 @@
+{
+  "base_url": "http://127.0.0.1:11438",
+  "embedding_base_url": "http://127.0.0.1:11435",
+  "opensearch_url": "http://127.0.0.1:19200",
+  "opensearch_index": "qrecc-official-bm25",
+  "retriever_backend": "bm25",
+  "model": "qwen3:8b",
+  "embedding_model": "bge-m3",
+  "request_timeout": 1800,
+  "ollama_num_thread": 2,
+  "ollama_num_gpu": null,
+  "llm_num_ctx": 16384,
+  "llm_num_predict": 2048,
+  "full_corpus_source": "official_zip",
+  "corpus_format": "passages_jsonl",
+  "corpus_path": "/data1/zixuan/qrecc_full/passages.zip",
+  "eval_path": "/data1/zixuan/qrecc_full/questions.jsonl",
+  "dataset_manifest_path": "/data1/zixuan/qrecc_full/manifest.json"
+}

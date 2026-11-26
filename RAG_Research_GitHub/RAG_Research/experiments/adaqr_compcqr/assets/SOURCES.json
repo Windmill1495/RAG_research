@@ -1,0 +1,67 @@
+{
+  "paper": "https://aclanthology.org/2024.emnlp-main.746.pdf",
+  "source": {
+    "qrecc_training": {
+      "record": "https://zenodo.org/records/5115890",
+      "url": "https://zenodo.org/records/5115890/files/qrecc-training.json?download=1",
+      "bytes": 66603648,
+      "md5": "72abc475c62b99546f4c61192cd721f3",
+      "sha256": "e5b3ca9cb4e1bbd66b90e553373352de1b5bf105e080028c7be79b4dd92693f8"
+    },
+    "infocqr_dev": {
+      "url": "https://raw.githubusercontent.com/smartyfh/InfoCQR/main/datasets/qrecc/dev.json",
+      "sha256": "b3c1a2fd5c7aeccd3837c74aa3c6a017e09a04c2f69bf554353e98c9bf2e8607",
+      "rows": 11573,
+      "conversations": 2000
+    },
+    "infocqr_train": {
+      "url": "https://raw.githubusercontent.com/smartyfh/InfoCQR/main/datasets/qrecc/train.json",
+      "filename": "infocqr-train.json",
+      "sha256": "aaa0e437ea2cefc7b3356db56260b916eb5b09b377cb96bd1838488dc844e0a4",
+      "rows": 51928,
+      "nonempty_answers_after_first_turn": 39677,
+      "verification": "The multiset of conversation ID, reference rewrite and reference answer is identical to the official QReCC training rows after removing the published dev conversations. Numeric turn IDs differ for some InfoCQR rows."
+    },
+    "infocqr_initial_fsl": {
+      "url": "https://raw.githubusercontent.com/smartyfh/InfoCQR/main/datasets/qrecc/train-sampled10k_chatgpt_ICL.jsonl",
+      "sha256": "0d541a894c518a0d71cced8d6076f012ad7485b8130f859214490c1d96810114",
+      "rows": 10000,
+      "nonfirst_gpt_labels": 8274,
+      "nonfirst_gpt_label_field": "GPT_rewrite.choices[0].message.content",
+      "human_rewrite_field": "Truth_rewrite",
+      "scope": "Author label pool. AdaQR specific 3850 IDs unverified."
+    }
+  },
+  "dpo_ids": {
+    "filename": "adaqr_qrecc_dpo_ids_39677.json",
+    "sha256": "237e9611ee9ac9c791c26b2c8fb715d820b8e202fafe78e402ecb9db43669aaa",
+    "selection": "Exclude every official raw QReCC training conversation listed in InfoCQR dev.json; require nonempty Answer and Turn_no > 1. Preserve official source order and format Conversation_no-Turn_no. Counts match all three AdaQR Table 11 statistics.",
+    "all": 51928,
+    "answered": 47463,
+    "answered_nonfirst": 39677,
+    "existing_loader_incompatible_ids": [
+      "8048-5",
+      "8048-4",
+      "8050-3",
+      "8050-2",
+      "8050-4",
+      "8050-5",
+      "8054-4",
+      "8054-3",
+      "8054-2",
+      "8054-5",
+      "9435-3",
+      "9435-4",
+      "9435-5"
+    ]
+  },
+  "dpo_training_jsonl": {
+    "filename": "adaqr_qrecc_dpo_train_39677.jsonl",
+    "rows": 39677,
+    "sha256": "dc4865131405e5caebc936b6eea0ae2f208c37e5dd6a56163538e9900362268c",
+    "producer": "build_dpo_training.py",
+    "producer_sha256": "f93f0e1ea1928e3d41ad5de93bd8b4989692b549c9ff5cdb0b9ea75bd6c42c23",
+    "history": "Preserve the official Context text. Derive message roles from previous rows in official encounter order, and check every text position. Three documented rows in conversation 9435 contain a different answer in the supplied Context at historical assistant position 1; keep the supplied text at that verified role. Preserve the official raw ID. Omit optional history turn_id because some official numerical turn IDs are not chronological.",
+    "verification": "The project training_rows loader returns all 39677 rows in the exact ID order. The older direct raw JSON loading path excludes 13 rows."
+  }
+}

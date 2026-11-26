@@ -1,0 +1,12 @@
+{
+  "retriever_backend": "bm25",
+  "base_url": "http://127.0.0.1:11434",
+  "embedding_base_url": "http://127.0.0.1:11435",
+  "opensearch_url": "http://127.0.0.1:9200",
+  "opensearch_index": "qrecc-bm25-full",
+  "model": "qwen3:8b",
+  "embedding_model": "bge-m3",
+  "request_timeout": 600,
+  "llm_num_ctx": 16384,
+  "llm_num_predict": 2048
+}

@@ -1,0 +1,9 @@
+transformers==4.51.3
+accelerate==1.6.0
+peft==0.15.2
+bitsandbytes==0.45.5
+pyserini==0.24.0
+faiss-cpu==1.10.0
+huggingface-hub==0.33.5
+sentencepiece==0.2.3
+openai==3.57.0

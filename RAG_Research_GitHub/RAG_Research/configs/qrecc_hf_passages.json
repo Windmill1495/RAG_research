@@ -1,0 +1,340 @@
+{
+  "repo": "slupart/qrecc-passages",
+  "revision": "99706cf40ae845ba9730e6a49b6ed67337bd6166",
+  "endpoint": "https://hf-mirror.com",
+  "provenance": "third-party Parquet repack; not the official ZIP checksum",
+  "files": [
+    {
+      "path": "data/train-000.parquet",
+      "size": 577105021,
+      "sha256": "eb366f68603b2abbf9502faea78ed73839f2cfde0e40c01b3e769d4e3f86a9a7",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-000.parquet"
+    },
+    {
+      "path": "data/train-001.parquet",
+      "size": 553023151,
+      "sha256": "42b58ae4da0541b4ceea703c68dfaf06a8d39d744efc89357e8ddc908f52a59a",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-001.parquet"
+    },
+    {
+      "path": "data/train-002.parquet",
+      "size": 554021203,
+      "sha256": "bfff5d2e047d9496e8083f2692d077684c3f09cc0bdc0d55b757008bda85259f",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-002.parquet"
+    },
+    {
+      "path": "data/train-003.parquet",
+      "size": 550417144,
+      "sha256": "348d405d730abe1db92a8d116d2e688748630c6a601116d7455ce33203f77524",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-003.parquet"
+    },
+    {
+      "path": "data/train-004.parquet",
+      "size": 550355382,
+      "sha256": "87069600af36f96c2db77f729a9db537aa8f6bf43505b18b73fc411573992dd7",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-004.parquet"
+    },
+    {
+      "path": "data/train-005.parquet",
+      "size": 549492432,
+      "sha256": "4178f609f31141bb0ed94990a04446a140dcdd67b972b4c1371ab81df007a45b",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-005.parquet"
+    },
+    {
+      "path": "data/train-006.parquet",
+      "size": 552411557,
+      "sha256": "5b16d7118166355ab745f5280a46276e3f04ce085ae6f7fd8bbeba5083afe28f",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-006.parquet"
+    },
+    {
+      "path": "data/train-007.parquet",
+      "size": 553445632,
+      "sha256": "a2e11cee37e363889f1ffcf219f3699e25872223b5b3cba0235d289707052586",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-007.parquet"
+    },
+    {
+      "path": "data/train-008.parquet",
+      "size": 549726866,
+      "sha256": "f6519966273fd38c46acd7dcb35b5ba81e36dd1740a00f3bc68d80e2a0d318c4",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-008.parquet"
+    },
+    {
+      "path": "data/train-009.parquet",
+      "size": 550767622,
+      "sha256": "97d195f63429a85ded1633a304c3e431bd9430f44795852d1d1f577f40138273",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-009.parquet"
+    },
+    {
+      "path": "data/train-010.parquet",
+      "size": 550802882,
+      "sha256": "315b36aa75ae682f13dba7dcb46049ceb5b84e9e156415f68b610a4fc4a214e6",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-010.parquet"
+    },
+    {
+      "path": "data/train-011.parquet",
+      "size": 551928812,
+      "sha256": "ad20378bb595c4aacfcb8e0fb404bddb3abbfe9c87f94aa92077c46d3f159d6d",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-011.parquet"
+    },
+    {
+      "path": "data/train-012.parquet",
+      "size": 551801192,
+      "sha256": "d42190c2029abcff309dfb500ebb43b3f1deee1e1b02e3cc63e3ad5e01c8b975",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-012.parquet"
+    },
+    {
+      "path": "data/train-013.parquet",
+      "size": 551952120,
+      "sha256": "4d0b962e450afd470778762a016b1316c4c7a0aa7462985128064b56f3c4957b",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-013.parquet"
+    },
+    {
+      "path": "data/train-014.parquet",
+      "size": 548814452,
+      "sha256": "8317d707afd898fb752634fbed9ca2e703e10aadd8b4959bcce75552dc745022",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-014.parquet"
+    },
+    {
+      "path": "data/train-015.parquet",
+      "size": 554173448,
+      "sha256": "eaa884ac192088a65183bf9840c3f5b2c94a110bb68474752b126d0464a30cd7",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-015.parquet"
+    },
+    {
+      "path": "data/train-016.parquet",
+      "size": 549715389,
+      "sha256": "cad0f890d4e254d104a9cb819ab4fc7efdcbd89e6f22a17ddead86f0ac60cbe5",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-016.parquet"
+    },
+    {
+      "path": "data/train-017.parquet",
+      "size": 551230849,
+      "sha256": "49a6671174b242e99ef569235c9e53df0c06b9b0089aadfa21e2eccb70e3fa1c",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-017.parquet"
+    },
+    {
+      "path": "data/train-018.parquet",
+      "size": 551638834,
+      "sha256": "437678886d16835c0d8cc2aa6660e419bf3366093911f4b3e11721b032a9f24c",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-018.parquet"
+    },
+    {
+      "path": "data/train-019.parquet",
+      "size": 552202754,
+      "sha256": "62f5b01e5283e942b534fb85caa9ac375ee177a4f9e27dc55f26e7ab8229bfce",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-019.parquet"
+    },
+    {
+      "path": "data/train-020.parquet",
+      "size": 551870981,
+      "sha256": "6da5416eb0c8b7c7a4c57fe18d0c21a335f80dd90233c50888ec4e2b8ffcd357",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-020.parquet"
+    },
+    {
+      "path": "data/train-021.parquet",
+      "size": 549295904,
+      "sha256": "ca3d08e05035e0e17c41dbaf5608d6acff647c5b96ffd3d1a6ae0636de9e07c1",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-021.parquet"
+    },
+    {
+      "path": "data/train-022.parquet",
+      "size": 553844476,
+      "sha256": "c6fe474c610dd033aa24be8c4a7839d245d87bfc604426af52fd3cf2d7708208",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-022.parquet"
+    },
+    {
+      "path": "data/train-023.parquet",
+      "size": 551680367,
+      "sha256": "1d51dcc54ac98ce7bfe982671a874d5fde27604de088da11ab78d59935aed9e0",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-023.parquet"
+    },
+    {
+      "path": "data/train-024.parquet",
+      "size": 552922010,
+      "sha256": "2c28affe630d34e224f9a374636c68dd4576b9ce4e0cb99e04fa5d05766fba1b",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-024.parquet"
+    },
+    {
+      "path": "data/train-025.parquet",
+      "size": 550551876,
+      "sha256": "cb03c4fc232ab3230c0b4af3b2166c56a937b41404984b29beb072c18e40528b",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-025.parquet"
+    },
+    {
+      "path": "data/train-026.parquet",
+      "size": 548138922,
+      "sha256": "c6da863bb1cfede80ad7a713be52f1491ae14f17065df8b4f0d9049174a9a308",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-026.parquet"
+    },
+    {
+      "path": "data/train-027.parquet",
+      "size": 550440015,
+      "sha256": "aedb2cad27c2dbe852bf91e833fa0e57ca704a3a789763a83f1ee744450a021e",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-027.parquet"
+    },
+    {
+      "path": "data/train-028.parquet",
+      "size": 552558835,
+      "sha256": "4a6a199ab5871f4ae84ab1898c6107becc07ac8b34a2838b183c0fb626273d73",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-028.parquet"
+    },
+    {
+      "path": "data/train-029.parquet",
+      "size": 550715453,
+      "sha256": "ea06dcbbc2d55f9e51f2120022b4f080ca85312b1be96aa7d982e5446a9b015f",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-029.parquet"
+    },
+    {
+      "path": "data/train-030.parquet",
+      "size": 550115319,
+      "sha256": "6d22c8c33820f23e84264a7fa62d34a1130e00c31e7d0e9693e76793ddede872",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-030.parquet"
+    },
+    {
+      "path": "data/train-031.parquet",
+      "size": 548911081,
+      "sha256": "c50c62069fa75987b2ffa7fa72783efc8700ef860ca309ba125baa943a7d0937",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-031.parquet"
+    },
+    {
+      "path": "data/train-032.parquet",
+      "size": 552878230,
+      "sha256": "7e3d8868ab6678a8d5f138a0ac2a085bc5fae2bf808f42647fc23949efb89076",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-032.parquet"
+    },
+    {
+      "path": "data/train-033.parquet",
+      "size": 551622563,
+      "sha256": "827d0681b14d9b2d4fd5ae4317221e8bf3c43e38f4e591d9baf4f026453b4638",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-033.parquet"
+    },
+    {
+      "path": "data/train-034.parquet",
+      "size": 554351885,
+      "sha256": "fe923b65d7bac0d6ff874763125ca771267348e836c3c372d69eaf0ba2f3936c",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-034.parquet"
+    },
+    {
+      "path": "data/train-035.parquet",
+      "size": 549819896,
+      "sha256": "bf0951eb54ef43f4741bc3d384cdb812f590d64e52c09009f8f84354cf1651de",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-035.parquet"
+    },
+    {
+      "path": "data/train-036.parquet",
+      "size": 553651154,
+      "sha256": "d8fbe32aba222de2598aa27e111d8130fa15bdd02e5fa93c00b0c2f508f4e20f",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-036.parquet"
+    },
+    {
+      "path": "data/train-037.parquet",
+      "size": 549897726,
+      "sha256": "be8dc5f7bb5078485934f8ed332240d504cb7252591dde9d1c94f98e016d713f",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-037.parquet"
+    },
+    {
+      "path": "data/train-038.parquet",
+      "size": 554099035,
+      "sha256": "c97e0f0c3659b024d0b73426c154d442d87954f0be5e5e67108a9796b27733f7",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-038.parquet"
+    },
+    {
+      "path": "data/train-039.parquet",
+      "size": 550163605,
+      "sha256": "a2422a21a599c68d2871eb25d9e1d5f296bcde8cf7383e2ddc41734e8e002870",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-039.parquet"
+    },
+    {
+      "path": "data/train-040.parquet",
+      "size": 548127458,
+      "sha256": "30f22c6657ff4d3c39f5ba935e813c40dbc7262911e7298130cbe11607f1b662",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-040.parquet"
+    },
+    {
+      "path": "data/train-041.parquet",
+      "size": 549581610,
+      "sha256": "17a7b3c4ecb0c39ba701c63d7cbc7e42ec3c816d9c2340ecb640ea2ef1c45bd0",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-041.parquet"
+    },
+    {
+      "path": "data/train-042.parquet",
+      "size": 551794523,
+      "sha256": "a395668cac312338d2950082646f7a9aec55ad5a33cc9ccc351c53d3e1a1ee36",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-042.parquet"
+    },
+    {
+      "path": "data/train-043.parquet",
+      "size": 550535267,
+      "sha256": "bd990fbe1eae8a49470469b852da06707d0c6dc3c8dc1b56b414153922c82773",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-043.parquet"
+    },
+    {
+      "path": "data/train-044.parquet",
+      "size": 550091119,
+      "sha256": "237e5bff38efa04250cf400281874157b4db53be51b7a8dcc5181f4d06ad9158",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-044.parquet"
+    },
+    {
+      "path": "data/train-045.parquet",
+      "size": 551143492,
+      "sha256": "c10e6b0250b2f6b66889cc70782d47aaa5d4162974643bdb813fc99fdbe01bb0",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-045.parquet"
+    },
+    {
+      "path": "data/train-046.parquet",
+      "size": 553080405,
+      "sha256": "f13a60b53eeae0745676927ff4cecf7d340dcd663eae950a372ae164e253d850",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-046.parquet"
+    },
+    {
+      "path": "data/train-047.parquet",
+      "size": 552227087,
+      "sha256": "c73f0ff8bf6118fc3bec455bd307724ef5f6602816a7c3d9fd06c256cf370a4b",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-047.parquet"
+    },
+    {
+      "path": "data/train-048.parquet",
+      "size": 550478799,
+      "sha256": "7ba5d9eb3aa6b3f90bcb099c6661c64e64351c6d458a009fbb51ce0f674d7376",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-048.parquet"
+    },
+    {
+      "path": "data/train-049.parquet",
+      "size": 550761959,
+      "sha256": "c4d5b2010f9853cb69f20cb5ea594d8f490b1c2f8b1c21ea9445961b4627fe42",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-049.parquet"
+    },
+    {
+      "path": "data/train-050.parquet",
+      "size": 552504520,
+      "sha256": "742da74f857917591ca3e088dc066fc7974923f1be0f11c88774b244d4f71962",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-050.parquet"
+    },
+    {
+      "path": "data/train-051.parquet",
+      "size": 551484044,
+      "sha256": "04f68fe8252c6651aa17121cab3ba9e34c1ca0a607a07dcd8099b1943f32126c",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-051.parquet"
+    },
+    {
+      "path": "data/train-052.parquet",
+      "size": 551769456,
+      "sha256": "c56b8567245c3fce0f215df4a1e0c6057afcd7d4e97746d715de6f0d388e607e",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-052.parquet"
+    },
+    {
+      "path": "data/train-053.parquet",
+      "size": 553808826,
+      "sha256": "58e4153d72078a239095710ec48a1797d34753e262a70056ea2be67d46fe7981",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-053.parquet"
+    },
+    {
+      "path": "data/train-054.parquet",
+      "size": 315965736,
+      "sha256": "131a969f373bfb7aee9ca4098bcac46fdfa544a151c8c035cc4ae47a90226b00",
+      "url": "https://hf-mirror.com/datasets/slupart/qrecc-passages/resolve/99706cf40ae845ba9730e6a49b6ed67337bd6166/data/train-054.parquet"
+    }
+  ],
+  "file_count": 55,
+  "total_bytes": 30115910376
+}

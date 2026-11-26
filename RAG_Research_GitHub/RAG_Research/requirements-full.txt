@@ -1,0 +1,2 @@
+# Only the optional HF Parquet corpus path requires this dependency.
+pyarrow==21.0.0
